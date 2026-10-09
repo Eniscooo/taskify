@@ -1,36 +1,43 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Naija Market
 
-## Getting Started
+A Lagos marketplace for buying and selling items and hiring local help, with payments held until the buyer confirms.
 
-First, run the development server:
+- **Web app** (this folder): Next.js 16 with Cache Components, React 19 and Tailwind 4.
+- **API** ([api/](api/)): NestJS, PostgreSQL, Redis and Better Auth. See [api/README.md](api/README.md).
+
+## Running locally
+
+Start the API first. Its README covers first-time setup. You need three terminals:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cd api && npm run services     # Postgres + Redis
+cd api && npm run start:dev    # API on http://localhost:4000
+npm run dev                    # web app on http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Copy `.env.example` to `.env.local` if the API isn't on `http://localhost:4000/v1`. `next build` also needs the API running, because it prerenders listing pages.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Signing in
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Every seeded user has the password `naija1234`. The demo user is Adaeze: sign in with `0803 412 7790` or `adaeze.okafor@gmail.com`.
 
-## Learn More
+New accounts get a 6-digit SMS code. In development, codes are printed in the API terminal instead of being texted.
 
-To learn more about Next.js, take a look at the following resources:
+## What's real and what's mock
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+| Area | Source |
+|---|---|
+| Sign-up, login, phone verification, password reset, sessions | API (Better Auth) |
+| Your profile details (name, area, bio) | API |
+| Listings: browse, search, filters, detail, seller's listings | API |
+| Orders, payments, messages, reviews, notifications, providers, tasks, admin | Mock data in `lib/mock-data.ts` |
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Mock data still uses mock ids (`u-me`, `l-1003`). Seeded users keep their mock id in the web app, so Adaeze still sees her demo orders and messages. New accounts start empty.
 
-## Deploy on Vercel
+## Where things live
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- `lib/api.ts`: one function per API endpoint. Listings call the API; the rest read mock data.
+- `lib/data/listings.ts`: cached listing reads for Server Components.
+- `lib/auth-client.ts`: Better Auth client for the browser (sign-in, OTP, session).
+- `lib/session.ts`: the signed-in user for Server Components. Read it inside `<Suspense>`.
+- `proxy.ts`: sends signed-out visitors to `/auth/login` before private pages.

@@ -62,10 +62,20 @@ export interface Listing {
   description: string;
   photoCount: number;
   sellerId: string;
+  /** Public seller summary. Present on listings served by the API. */
+  seller?: ListingSeller;
   postedAt: string;
-  distanceKm: number;
+  /** Distance from the viewer. Only mock data has it until location search lands. */
+  distanceKm?: number;
   status: "active" | "draft" | "sold" | "flagged" | "removed";
   views: number;
+}
+
+export interface ListingSeller {
+  id: string;
+  username: string;
+  displayName: string;
+  verified: boolean;
 }
 
 export interface Provider {

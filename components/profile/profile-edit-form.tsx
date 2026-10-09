@@ -9,20 +9,19 @@ import { Button, ButtonLink } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { useToast } from "@/components/ui/toast";
 import { VerificationBadge } from "@/components/ui/verification-badge";
-import { updateProfile } from "@/lib/api";
+import { authClient } from "@/lib/auth-client";
+import { authErrorMessage } from "@/lib/auth-errors";
 import { AREAS } from "@/lib/constants";
 import type { Area, User } from "@/lib/types";
-import { validateEmail, validateNigerianPhone } from "@/lib/validation";
+import { formatNigerianPhone } from "@/lib/validation";
 
-type FormErrors = Partial<Record<"name" | "email" | "phone", string>>;
+type FormErrors = Partial<Record<"name", string>>;
 
 export function ProfileEditForm({ user }: { user: User }) {
   const router = useRouter();
   const toast = useToast();
   const [form, setForm] = useState({
     name: user.name,
-    email: user.email,
-    phone: user.phone,
     area: user.area,
     bio: user.bio ?? "",
   });
@@ -33,15 +32,15 @@ export function ProfileEditForm({ user }: { user: User }) {
     e.preventDefault();
     const next: FormErrors = {};
     if (form.name.trim().length < 2) next.name = "Enter your full name.";
-    if (!validateEmail(form.email)) next.email = "Enter a valid email address.";
-    if (!validateNigerianPhone(form.phone)) next.phone = "Enter a valid Nigerian number, e.g. 0803 412 7790.";
     setErrors(next);
     if (Object.keys(next).length) return;
     setSaving(true);
-    await updateProfile({ ...form, area: form.area as Area });
+    const { error } = await authClient.updateUser({ name: form.name.trim(), area: form.area, bio: form.bio.trim() });
     setSaving(false);
+    if (error) return toast(authErrorMessage(error), "error");
     toast("Profile updated");
     router.push("/profile");
+    router.refresh();
   };
 
   return (
@@ -60,12 +59,13 @@ export function ProfileEditForm({ user }: { user: User }) {
         <Field label="Full name" htmlFor="name" error={errors.name}>
           <Input id="name" autoComplete="name" value={form.name} invalid={!!errors.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
         </Field>
-        <Field label="Phone number" htmlFor="phone" error={errors.phone}>
-          <Input id="phone" type="tel" autoComplete="tel" value={form.phone} invalid={!!errors.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+        {/* Phone and email are sign-in details, so they can't be changed here yet. */}
+        <Field label="Phone number" htmlFor="phone" hint="Contact support to change your phone number.">
+          <Input id="phone" type="tel" value={formatNigerianPhone(user.phone)} disabled />
         </Field>
         <VerificationBadge verified={user.phoneVerified} label="Phone verified" />
-        <Field label="Email" htmlFor="email" error={errors.email}>
-          <Input id="email" type="email" autoComplete="email" value={form.email} invalid={!!errors.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+        <Field label="Email" htmlFor="email" hint="Contact support to change your email.">
+          <Input id="email" type="email" value={user.email} disabled />
         </Field>
         <Field label="Area" htmlFor="area">
           <Select id="area" value={form.area} onChange={(e) => setForm({ ...form, area: e.target.value as Area })}>

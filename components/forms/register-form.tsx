@@ -2,18 +2,38 @@
 
 import { CheckCircle2, Loader2 } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/field";
-import { register } from "@/lib/api";
-import { validateEmail, validateNigerianPhone } from "@/lib/validation";
+import { authClient, type AuthError } from "@/lib/auth-client";
+import { authErrorMessage } from "@/lib/auth-errors";
+import { toE164, validateEmail, validateNigerianPhone } from "@/lib/validation";
 import { OtpStep } from "./otp-step";
 import { PasswordInput } from "./password-input";
 
 type Fields = { name: string; phone: string; email: string; password: string };
-type FieldErrors = Partial<Record<keyof Fields | "terms", string>>;
+type FieldErrors = Partial<Record<keyof Fields | "terms" | "form", string>>;
+
+/** Puts a sign-up error next to the field it's about. */
+function signUpErrors(error: AuthError): FieldErrors {
+  const message = authErrorMessage(error);
+  switch (error.code) {
+    case "PHONE_NUMBER_EXISTS":
+    case "INVALID_PHONE_NUMBER":
+      return { phone: message };
+    case "USER_ALREADY_EXISTS":
+    case "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL":
+      return { email: message };
+    case "PASSWORD_TOO_SHORT":
+      return { password: message };
+    default:
+      return { form: message };
+  }
+}
 
 export function RegisterForm() {
+  const router = useRouter();
   const [step, setStep] = useState<"details" | "otp" | "done">("details");
   const [form, setForm] = useState<Fields>({ name: "", phone: "", email: "", password: "" });
   const [terms, setTerms] = useState(false);
@@ -24,6 +44,8 @@ export function RegisterForm() {
     setForm({ ...form, [k]: e.target.value });
     setErrors({ ...errors, [k]: undefined });
   };
+
+  const phoneNumber = toE164(form.phone);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -36,13 +58,39 @@ export function RegisterForm() {
     setErrors(next);
     if (Object.keys(next).length) return;
     setLoading(true);
-    await register(form);
+    // Creates the account without a session; verifying the phone signs them in.
+    const { error } = await authClient.signUp.email({
+      name: form.name.trim(),
+      email: form.email.trim(),
+      password: form.password,
+      phoneNumber,
+    });
+    if (error) {
+      setLoading(false);
+      return setErrors(signUpErrors(error));
+    }
+    await authClient.phoneNumber.sendOtp({ phoneNumber });
     setLoading(false);
     setStep("otp");
   };
 
   if (step === "otp") {
-    return <OtpStep phone={form.phone} onVerified={() => setStep("done")} onBack={() => setStep("details")} />;
+    return (
+      <OtpStep
+        phone={phoneNumber}
+        onSubmit={async (code) => {
+          const { error } = await authClient.phoneNumber.verify({ phoneNumber, code });
+          if (error) throw new Error(authErrorMessage(error));
+          setStep("done");
+          router.refresh();
+        }}
+        onResend={async () => {
+          const { error } = await authClient.phoneNumber.sendOtp({ phoneNumber });
+          if (error) throw new Error(authErrorMessage(error));
+        }}
+        onBack={() => setStep("details")}
+      />
+    );
   }
 
   if (step === "done") {
@@ -67,6 +115,11 @@ export function RegisterForm() {
         <p className="mt-1 text-muted">It takes less than a minute.</p>
       </div>
       <form noValidate onSubmit={submit} className="space-y-5">
+        {errors.form && (
+          <p role="alert" className="rounded-xl bg-danger-soft p-3 text-sm font-medium text-danger">
+            {errors.form}
+          </p>
+        )}
         <Field label="Full name" htmlFor="name" error={errors.name}>
           <Input id="name" autoComplete="name" placeholder="e.g. Adaeze Okafor" value={form.name} invalid={!!errors.name} onChange={update("name")} />
         </Field>

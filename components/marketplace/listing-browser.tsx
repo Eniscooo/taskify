@@ -4,7 +4,7 @@ import { PackageSearch, SlidersHorizontal } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { EmptyState } from "@/components/ui/states";
+import { EmptyState, ErrorState } from "@/components/ui/states";
 import { GridSkeleton } from "@/components/ui/skeleton";
 import { getListings, type ListingFilters } from "@/lib/api";
 import { filtersFromParams, filtersToQuery } from "@/lib/search-params";
@@ -26,16 +26,25 @@ export function ListingBrowser({ lockedCategory }: { lockedCategory?: ListingCat
     ...(lockedCategory && { category: lockedCategory }),
   }));
   const [results, setResults] = useState<Listing[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const [sheetOpen, setSheetOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    getListings(filters).then((r) => !cancelled && setResults(r));
+    getListings(filters).then(
+      (r) => {
+        if (cancelled) return;
+        setResults(r);
+        setFailed(false);
+      },
+      () => !cancelled && setFailed(true),
+    );
     window.history.replaceState(null, "", `${window.location.pathname}${filtersToQuery(filters, lockedCategory ? ["category"] : [])}`);
     return () => {
       cancelled = true;
     };
-  }, [filters, lockedCategory]);
+  }, [filters, lockedCategory, attempt]);
 
   const activeCount = countActiveFilters(filters, !!lockedCategory);
 
@@ -60,7 +69,23 @@ export function ListingBrowser({ lockedCategory }: { lockedCategory?: ListingCat
         </div>
         <ActiveFilters filters={filters} onChange={setFilters} hideCategory={!!lockedCategory} />
 
-        {!results ? (
+        {failed ? (
+          <ErrorState
+            title="Couldn't load listings"
+            description="Check your connection and try again."
+            action={
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setFailed(false);
+                  setAttempt((n) => n + 1);
+                }}
+              >
+                Try again
+              </Button>
+            }
+          />
+        ) : !results ? (
           <GridSkeleton />
         ) : results.length ? (
           <ProductGrid listings={results} className="lg:grid-cols-3" />

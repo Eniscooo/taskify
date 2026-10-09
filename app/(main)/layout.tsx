@@ -1,9 +1,9 @@
 import { BottomNav } from "@/components/layout/bottom-nav";
 import { DesktopNav } from "@/components/layout/desktop-nav";
-import { getCurrentUser, getUnreadCounts } from "@/lib/api";
+import { getUnreadCounts } from "@/lib/api";
 
 export default async function MainLayout({ children }: { children: React.ReactNode }) {
-  const [counts, user] = await Promise.all([getUnreadCounts(), getCurrentUser()]);
+  const counts = await getUnreadCounts();
 
   return (
     <>
@@ -13,7 +13,7 @@ export default async function MainLayout({ children }: { children: React.ReactNo
       >
         Skip to content
       </a>
-      <DesktopNav counts={counts} userName={user.name} />
+      <DesktopNav counts={counts} />
       <main id="main" className="mx-auto w-full max-w-6xl px-4 pb-24 md:px-6 md:pt-6 md:pb-12">
         {children}
       </main>

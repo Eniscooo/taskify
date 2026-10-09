@@ -6,21 +6,25 @@ import { StickyActionBar } from "@/components/layout/sticky-action-bar";
 import { CheckoutSheet } from "@/components/payments/checkout-sheet";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { createOrder } from "@/lib/api";
+import { authClient } from "@/lib/auth-client";
 import { formatNaira } from "@/lib/formatters";
 import type { Listing } from "@/lib/types";
 
 export function ListingActions({
   listing,
   sellerName,
+  sellerUsername,
   conversationHref,
-  isOwner,
 }: {
   listing: Listing;
   sellerName: string;
+  sellerUsername: string;
   conversationHref: string;
-  isOwner: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  // Checked in the browser so the listing page stays the same (and cached) for everyone.
+  const { data: session } = authClient.useSession();
+  const isOwner = session?.user.username === sellerUsername;
 
   if (isOwner) {
     return (

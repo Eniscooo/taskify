@@ -7,6 +7,12 @@ import type {
   ServiceCategory,
 } from "./types";
 
+/** Base URL of the Naija Market API, including the version prefix. */
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/v1";
+
+/** Area used before a signed-out visitor or new user picks one. */
+export const DEFAULT_AREA: Area = "Yaba";
+
 export const AREAS: Area[] = [
   "Yaba",
   "Surulere",
@@ -55,7 +61,6 @@ export const DELIVERY_METHODS: { id: DeliveryMethod; label: string }[] = [
 
 export const SORT_OPTIONS = [
   { id: "recommended", label: "Recommended" },
-  { id: "nearest", label: "Nearest first" },
   { id: "newest", label: "Newest first" },
   { id: "price-asc", label: "Price: low to high" },
   { id: "price-desc", label: "Price: high to low" },

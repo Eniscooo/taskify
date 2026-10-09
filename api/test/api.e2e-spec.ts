@@ -1,4 +1,4 @@
-import type { INestApplication } from '@nestjs/common';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Test } from '@nestjs/testing';
 import 'dotenv/config';
 import request from 'supertest';
@@ -10,12 +10,12 @@ import { setupApp } from '../src/setup-app.js';
  * with `npm run db:seed`.
  */
 describe('API (e2e)', () => {
-  let app: INestApplication;
+  let app: NestExpressApplication;
   let http: ReturnType<typeof request>;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
-    app = moduleRef.createNestApplication();
+    app = moduleRef.createNestApplication<NestExpressApplication>({ bodyParser: false });
     setupApp(app);
     await app.init();
     http = request(app.getHttpServer());

@@ -49,7 +49,7 @@ export function ProductCard({
           <p className="flex items-center gap-1 pt-0.5 text-xs text-muted">
             <MapPin aria-hidden className="h-3.5 w-3.5" />
             {listing.area}
-            {large && <span>· {formatDistance(listing.distanceKm)}</span>}
+            {large && listing.distanceKm != null && <span>· {formatDistance(listing.distanceKm)}</span>}
           </p>
         </div>
       </Link>

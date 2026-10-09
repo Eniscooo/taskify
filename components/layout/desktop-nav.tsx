@@ -4,19 +4,16 @@ import { Bell, Search } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
+import { authClient } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
 import { Avatar } from "@/components/ui/avatar";
+import { ButtonLink } from "@/components/ui/button";
 import { Logo } from "./logo";
 import { NAV_ITEMS, isActive, type BadgeKey } from "./nav-items";
 
-export function DesktopNav({
-  counts,
-  userName,
-}: {
-  counts: Record<BadgeKey | "notifications", number>;
-  userName: string;
-}) {
+export function DesktopNav({ counts }: { counts: Record<BadgeKey | "notifications", number> }) {
   const pathname = usePathname();
+  const { data: session, isPending } = authClient.useSession();
   const router = useRouter();
   const [q, setQ] = useState("");
 
@@ -80,10 +77,18 @@ export function DesktopNav({
               <span className="absolute top-2 right-2 h-2.5 w-2.5 rounded-full border-2 border-surface bg-danger" />
             )}
           </Link>
-          <Link href="/profile" className="rounded-full focus-visible:outline-2 focus-visible:outline-brand">
-            <Avatar name={userName} size="sm" />
-            <span className="sr-only">Your profile</span>
-          </Link>
+          {isPending ? (
+            <span aria-hidden className="h-9 w-9 animate-pulse rounded-full bg-border" />
+          ) : session ? (
+            <Link href="/profile" className="rounded-full focus-visible:outline-2 focus-visible:outline-brand">
+              <Avatar name={session.user.name} size="sm" />
+              <span className="sr-only">Your profile</span>
+            </Link>
+          ) : (
+            <ButtonLink href="/auth/login" size="sm">
+              Log in
+            </ButtonLink>
+          )}
         </div>
       </div>
     </header>

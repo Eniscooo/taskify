@@ -5,26 +5,59 @@ import Link from "next/link";
 import { useState } from "react";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/field";
-import { requestOtp, resetPassword } from "@/lib/api";
-import { validateEmail, validateNigerianPhone } from "@/lib/validation";
+import { authClient } from "@/lib/auth-client";
+import { authErrorMessage } from "@/lib/auth-errors";
+import { toE164, validateNigerianPhone } from "@/lib/validation";
 import { OtpStep } from "./otp-step";
 import { PasswordInput } from "./password-input";
 
+/** Codes that mean the SMS code, not the new password, was the problem. */
+const CODE_ERRORS = new Set(["INVALID_OTP", "OTP_EXPIRED", "OTP_NOT_FOUND", "TOO_MANY_ATTEMPTS"]);
+
+/**
+ * Password reset by SMS code: phone → code → new password. The code is
+ * checked when the new password is submitted; if it's wrong, the user goes
+ * back to the code step with the error.
+ */
 export function ForgotPasswordForm() {
   const [step, setStep] = useState<"request" | "otp" | "reset" | "done">("request");
-  const [target, setTarget] = useState("");
+  const [phone, setPhone] = useState("");
+  const [code, setCode] = useState("");
+  const [codeError, setCodeError] = useState<string>();
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(false);
 
-  if (step === "otp") return <OtpStep phone={target} onVerified={() => setStep("reset")} onBack={() => setStep("request")} />;
+  const phoneNumber = toE164(phone);
+  const sendCode = async () => {
+    const { error } = await authClient.phoneNumber.requestPasswordReset({ phoneNumber });
+    if (error) throw new Error(authErrorMessage(error));
+  };
+
+  if (step === "otp") {
+    return (
+      <OtpStep
+        key={codeError}
+        phone={phoneNumber}
+        title="Enter your reset code"
+        initialError={codeError}
+        onSubmit={async (value) => {
+          setCode(value);
+          setCodeError(undefined);
+          setStep("reset");
+        }}
+        onResend={sendCode}
+        onBack={() => setStep("request")}
+      />
+    );
+  }
 
   if (step === "done") {
     return (
       <div className="text-center">
         <CheckCircle2 aria-hidden className="mx-auto h-16 w-16 animate-scale-in text-brand" />
         <h1 className="mt-4 text-2xl font-extrabold">Password updated</h1>
-        <p className="mt-1 text-muted">You can now log in with your new password.</p>
+        <p className="mt-1 text-muted">You&apos;ve been logged out everywhere. Log in with your new password.</p>
         <ButtonLink href="/auth/login" size="lg" className="mt-6 w-full">
           Log in
         </ButtonLink>
@@ -42,7 +75,7 @@ export function ForgotPasswordForm() {
         </span>
         <h1 className="text-3xl font-extrabold tracking-tight">{isReset ? "Set a new password" : "Forgot password?"}</h1>
         <p className="mt-1 text-muted">
-          {isReset ? "Choose something you haven't used before." : "Enter your phone number or email and we'll send you a reset code."}
+          {isReset ? "Choose something you haven't used before." : "Enter your phone number and we'll text you a reset code."}
         </p>
       </div>
       <form
@@ -53,17 +86,25 @@ export function ForgotPasswordForm() {
           if (isReset) {
             if (password.length < 8) return setError("Use at least 8 characters.");
             setLoading(true);
-            await resetPassword(target, password);
+            const { error } = await authClient.phoneNumber.resetPassword({ phoneNumber, otp: code, newPassword: password });
             setLoading(false);
+            if (error?.code && CODE_ERRORS.has(error.code)) {
+              setCodeError(authErrorMessage(error));
+              return setStep("otp");
+            }
+            if (error) return setError(authErrorMessage(error));
             return setStep("done");
           }
-          if (!validateNigerianPhone(target) && !validateEmail(target)) {
-            return setError("Enter a valid Nigerian phone number or email.");
-          }
+          if (!validateNigerianPhone(phone)) return setError("Enter a valid Nigerian phone number, e.g. 0803 412 7790.");
           setLoading(true);
-          await requestOtp(target);
-          setLoading(false);
-          setStep("otp");
+          try {
+            await sendCode();
+            setStep("otp");
+          } catch (err) {
+            setError((err as Error).message);
+          } finally {
+            setLoading(false);
+          }
         }}
         className="space-y-5"
       >
@@ -72,8 +113,17 @@ export function ForgotPasswordForm() {
             <PasswordInput id="new-password" autoComplete="new-password" value={password} invalid={!!error} onChange={(e) => setPassword(e.target.value)} />
           </Field>
         ) : (
-          <Field label="Phone number or email" htmlFor="target" error={error}>
-            <Input id="target" autoComplete="username" placeholder="0803 000 0000 or you@email.com" value={target} invalid={!!error} onChange={(e) => setTarget(e.target.value)} />
+          <Field label="Phone number" htmlFor="phone" error={error}>
+            <Input
+              id="phone"
+              type="tel"
+              autoComplete="tel-national"
+              inputMode="tel"
+              placeholder="0803 000 0000"
+              value={phone}
+              invalid={!!error}
+              onChange={(e) => setPhone(e.target.value)}
+            />
           </Field>
         )}
         <Button type="submit" size="lg" className="w-full" disabled={loading}>

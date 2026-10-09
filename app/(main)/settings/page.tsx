@@ -1,11 +1,14 @@
-import { Ban, KeyRound, Landmark, LogOut, MapPin, Phone, ShieldCheck, Smartphone, User } from "lucide-react";
+import { Ban, KeyRound, Landmark, MapPin, Phone, ShieldCheck, Smartphone, User } from "lucide-react";
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { ToggleRow } from "@/components/forms/toggle-row";
 import { PageHeader } from "@/components/layout/page-header";
+import { LogoutButton } from "@/components/profile/logout-button";
 import { SettingsLink, SettingsSection } from "@/components/profile/settings-section";
-import { ButtonLink } from "@/components/ui/button";
-import { getCurrentUser } from "@/lib/api";
+import { ListRowSkeleton } from "@/components/ui/skeleton";
 import { AUTO_RELEASE_DAYS } from "@/lib/constants";
+import { requireUser } from "@/lib/session";
+import { formatNigerianPhone } from "@/lib/validation";
 
 export const metadata: Metadata = { title: "Settings" };
 
@@ -32,17 +35,25 @@ const FAQ = [
   },
 ];
 
-export default async function SettingsPage() {
-  const user = await getCurrentUser();
+async function AccountSection() {
+  const user = await requireUser("/settings");
+  return (
+    <SettingsSection id="account" title="Account">
+      <SettingsLink href="/profile/edit" icon={User} label="Personal details" value={user.name} />
+      <SettingsLink href="/profile/edit" icon={Phone} label="Phone number" value={formatNigerianPhone(user.phone)} />
+      <SettingsLink href="/profile/edit" icon={MapPin} label="Default location" value={user.area} />
+    </SettingsSection>
+  );
+}
+
+export default function SettingsPage() {
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <PageHeader title="Settings" backHref="/profile" />
 
-      <SettingsSection id="account" title="Account">
-        <SettingsLink href="/profile/edit" icon={User} label="Personal details" value={user.name} />
-        <SettingsLink href="/profile/edit" icon={Phone} label="Phone number" value={user.phoneVerified ? "Verified" : "Verify now"} />
-        <SettingsLink href="/profile/edit" icon={MapPin} label="Default location" value={user.area} />
-      </SettingsSection>
+      <Suspense fallback={<ListRowSkeleton />}>
+        <AccountSection />
+      </Suspense>
 
       <SettingsSection id="payments" title="Payments & payouts">
         <SettingsLink href="/settings#payments" icon={Landmark} label="Payout bank account" value="GTBank ••4821" />
@@ -89,10 +100,7 @@ export default async function SettingsPage() {
       </SettingsSection>
 
       <div className="space-y-2">
-        <ButtonLink href="/auth/login" variant="outline" size="lg" className="w-full text-danger">
-          <LogOut aria-hidden className="h-5 w-5" />
-          Log out
-        </ButtonLink>
+        <LogoutButton />
         <p className="text-center text-xs text-muted">Naija Market v1.0 · Made in Lagos</p>
       </div>
     </div>

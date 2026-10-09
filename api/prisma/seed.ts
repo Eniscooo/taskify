@@ -2,17 +2,26 @@
  * Development seed: loads the web app's mock users, categories and listings
  * so the API and the frontend show the same data. Safe to re-run.
  *
+ * Every seeded user can sign in with DEV_PASSWORD, e.g. Adaeze (the web
+ * app's demo user) with 0803 412 7790 or adaeze.okafor@gmail.com.
+ *
  * Usage: npm run db:seed
  */
 import "dotenv/config";
 import { PrismaPg } from "@prisma/adapter-pg";
+import { hashPassword } from "better-auth/crypto";
 import { LISTING_CATEGORIES } from "../../lib/constants.js";
 import { listings as mockListings, users as mockUsers } from "../../lib/mock-data.js";
 import { PrismaClient, type DeliveryMethod, type ListingCondition } from "../src/generated/prisma/client.js";
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL! }) });
 
+const DEV_PASSWORD = "naija1234";
+
 async function main() {
+  if (process.env.NODE_ENV === "production") throw new Error("The seed is for development only.");
+  const passwordHash = await hashPassword(DEV_PASSWORD);
+
   // Categories
   for (const [i, c] of LISTING_CATEGORIES.entries()) {
     await prisma.category.upsert({
@@ -33,8 +42,9 @@ async function main() {
       email: u.email,
       area: u.area,
       bio: u.bio ?? null,
-      phoneVerifiedAt: u.phoneVerified ? joined : null,
-      emailVerifiedAt: joined,
+      // Users with an unverified phone get an SMS code (logged to the API console) when they sign in.
+      phoneVerified: u.phoneVerified,
+      emailVerified: true,
       idVerifiedAt: u.verified ? joined : null,
     };
     const row = await prisma.user.upsert({
@@ -43,6 +53,12 @@ async function main() {
       create: { username: u.username, createdAt: joined, ...data },
     });
     userIds.set(u.id, row.id);
+    // Password login, stored the way Better Auth stores it.
+    await prisma.account.upsert({
+      where: { providerId_accountId: { providerId: "credential", accountId: row.id } },
+      update: { password: passwordHash },
+      create: { userId: row.id, providerId: "credential", accountId: row.id, password: passwordHash },
+    });
   }
 
   // Listings: replace the seeded users' listings wholesale.
@@ -76,6 +92,7 @@ async function main() {
 
   const counts = await Promise.all([prisma.category.count(), prisma.user.count(), prisma.listing.count()]);
   console.log(`Seeded ${counts[0]} categories, ${counts[1]} users, ${counts[2]} listings.`);
+  console.log(`Seeded users sign in with password "${DEV_PASSWORD}".`);
 }
 
 try {

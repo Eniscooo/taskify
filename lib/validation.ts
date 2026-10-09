@@ -30,7 +30,20 @@ export function validateListing(d: ListingDraft): Errors<keyof ListingDraft> {
 
 export function validateNigerianPhone(phone: string) {
   const digits = phone.replace(/\D/g, "");
-  return /^(0[789][01]\d{8}|234[789][01]\d{8})$/.test(digits);
+  return /^(0[789][01]\d{8}|234[789][01]\d{8}|[789][01]\d{8})$/.test(digits);
+}
+
+/** "0803 412 7790", "803 412 7790" or "+234 803…" → "+2348034127790", the format the API stores. */
+export function toE164(phone: string) {
+  const digits = phone.replace(/\D/g, "");
+  if (digits.startsWith("234")) return `+${digits}`;
+  return `+234${digits.replace(/^0/, "")}`;
+}
+
+/** "+2348034127790" → "0803 412 7790", how Nigerians write numbers. */
+export function formatNigerianPhone(e164: string) {
+  const local = `0${e164.replace(/^\+234/, "")}`;
+  return local.replace(/^(\d{4})(\d{3})(\d{4})$/, "$1 $2 $3");
 }
 
 export function validateEmail(email: string) {

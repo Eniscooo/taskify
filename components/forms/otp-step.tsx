@@ -3,23 +3,35 @@
 import { Loader2, MessageSquareText } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { verifyOtp } from "@/lib/api";
+import { formatNigerianPhone } from "@/lib/validation";
 import { OtpInput } from "./otp-input";
 
-/** Phone verification step shared by register and password reset. */
+const RESEND_SECONDS = 30;
+
+/**
+ * SMS code step shared by sign-up, sign-in and password reset. `onSubmit`
+ * throws an Error whose message is shown under the code boxes.
+ */
 export function OtpStep({
   phone,
-  onVerified,
+  title = "Verify your phone",
+  initialError,
+  onSubmit,
+  onResend,
   onBack,
 }: {
+  /** E.164, e.g. +2348034127790. */
   phone: string;
-  onVerified: () => void;
+  title?: string;
+  initialError?: string;
+  onSubmit: (code: string) => Promise<void>;
+  onResend: () => Promise<void>;
   onBack: () => void;
 }) {
   const [code, setCode] = useState("");
-  const [error, setError] = useState<string>();
+  const [error, setError] = useState(initialError);
   const [verifying, setVerifying] = useState(false);
-  const [resendIn, setResendIn] = useState(30);
+  const [resendIn, setResendIn] = useState(RESEND_SECONDS);
 
   useEffect(() => {
     if (resendIn <= 0) return;
@@ -32,12 +44,22 @@ export function OtpStep({
     if (!/^\d{6}$/.test(code)) return setError("Enter the 6-digit code we sent you.");
     setVerifying(true);
     try {
-      await verifyOtp(phone, code);
-      onVerified();
-    } catch {
-      setError("That code didn't work. Check the SMS and try again.");
+      await onSubmit(code);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "That code didn't work. Check the SMS and try again.");
     } finally {
       setVerifying(false);
+    }
+  };
+
+  const resend = async () => {
+    setResendIn(RESEND_SECONDS);
+    setError(undefined);
+    setCode("");
+    try {
+      await onResend();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "We couldn't send a new code. Try again shortly.");
     }
   };
 
@@ -47,9 +69,9 @@ export function OtpStep({
         <span className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-soft">
           <MessageSquareText aria-hidden className="h-7 w-7 text-brand" />
         </span>
-        <h1 className="text-2xl font-extrabold tracking-tight">Verify your phone</h1>
+        <h1 className="text-2xl font-extrabold tracking-tight">{title}</h1>
         <p className="mt-1 text-muted">
-          We sent a 6-digit code by SMS to <strong className="text-foreground">{phone}</strong>.{" "}
+          We sent a 6-digit code by SMS to <strong className="text-foreground">{formatNigerianPhone(phone)}</strong>.{" "}
           <button type="button" onClick={onBack} className="font-semibold text-brand hover:underline">
             Change number
           </button>
@@ -72,7 +94,7 @@ export function OtpStep({
         {resendIn > 0 ? (
           <span>Resend in {resendIn}s</span>
         ) : (
-          <button type="button" onClick={() => setResendIn(30)} className="font-semibold text-brand hover:underline">
+          <button type="button" onClick={resend} className="font-semibold text-brand hover:underline">
             Resend code
           </button>
         )}

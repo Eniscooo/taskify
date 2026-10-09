@@ -12,14 +12,8 @@ import { SaveButton } from "@/components/marketplace/save-button";
 import { BuyerProtection, SafetyTip } from "@/components/payments/safety-notice";
 import { Badge } from "@/components/ui/badge";
 import { SectionHeader } from "@/components/ui/card";
-import {
-  getConversationIdForListing,
-  getListing,
-  getSimilarListings,
-  getUser,
-  staticIds,
-} from "@/lib/api";
-import { CURRENT_USER_ID } from "@/lib/constants";
+import { getConversationIdForListing, getProfile, getUser, staticIds } from "@/lib/api";
+import { cachedListing, cachedSimilarListings } from "@/lib/data/listings";
 import { categoryLabel, conditionLabel, deliveryLabel, formatNaira, formatRelative } from "@/lib/formatters";
 
 export function generateStaticParams() {
@@ -27,18 +21,20 @@ export function generateStaticParams() {
 }
 
 export async function generateMetadata({ params }: PageProps<"/marketplace/listing/[id]">): Promise<Metadata> {
-  const listing = await getListing((await params).id);
+  const listing = await cachedListing((await params).id);
   return { title: listing ? `${listing.title} — ${formatNaira(listing.price)}` : "Listing not found" };
 }
 
 export default async function ListingPage({ params }: PageProps<"/marketplace/listing/[id]">) {
   const { id } = await params;
-  const listing = await getListing(id);
+  const listing = await cachedListing(id);
   if (!listing) notFound();
 
   const [seller, similar, conversationId] = await Promise.all([
-    getUser(listing.sellerId),
-    getSimilarListings(id),
+    // Ratings and review counts aren't in the API yet, so the seller card
+    // still reads the mock profile with the same username.
+    listing.seller ? getProfile(listing.seller.username) : getUser(listing.sellerId),
+    cachedSimilarListings(id),
     getConversationIdForListing(id),
   ]);
   if (!seller) notFound();
@@ -95,7 +91,7 @@ export default async function ListingPage({ params }: PageProps<"/marketplace/li
               listing={listing}
               sellerName={seller.name.split(" ")[0]!}
               conversationHref={`/messages/${conversationId}`}
-              isOwner={listing.sellerId === CURRENT_USER_ID}
+              sellerUsername={seller.username}
             />
           </div>
 
@@ -148,7 +144,7 @@ export default async function ListingPage({ params }: PageProps<"/marketplace/li
           listing={listing}
           sellerName={seller.name.split(" ")[0]!}
           conversationHref={`/messages/${conversationId}`}
-          isOwner={listing.sellerId === CURRENT_USER_ID}
+          sellerUsername={seller.username}
         />
       </div>
     </article>

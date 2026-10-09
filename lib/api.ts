@@ -1,12 +1,12 @@
 /**
  * Naija Market API client.
  *
- * Every function here mirrors an endpoint of the planned NestJS REST API.
- * They currently resolve against in-memory mock data; swap the bodies for
- * `request()` calls when the backend is ready — the UI only depends on the
- * signatures and return types.
+ * Every function here mirrors an endpoint of the NestJS REST API. Listings
+ * are served by the API; the rest still resolve against in-memory mock data
+ * until their backend modules are built. The UI only depends on the
+ * signatures and return types, so each one can be swapped independently.
  */
-import { CURRENT_USER_ID, PLATFORM_FEE_RATE, type SortOption } from "./constants";
+import { API_BASE_URL, CURRENT_USER_ID, PLATFORM_FEE_RATE, SORT_OPTIONS, type SortOption } from "./constants";
 import * as db from "./mock-data";
 import type {
   Area,
@@ -21,69 +21,45 @@ import type {
   User,
 } from "./types";
 
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "https://api.naijamarket.ng/v1";
-
 export class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
+    public code = "ERROR",
   ) {
     super(message);
   }
 }
 
-/** Generic REST helper for when the real API is wired up. */
+/**
+ * REST helper. Sends the session cookie and turns the API's
+ * `{ error: { code, message } }` body into an ApiError.
+ */
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE_URL}${path}`, {
+    credentials: "include",
     ...init,
-    headers: { "Content-Type": "application/json", ...init?.headers },
+    headers: { ...(init?.body != null && { "Content-Type": "application/json" }), ...init?.headers },
   });
-  if (!res.ok) throw new ApiError(res.status, "Request failed");
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { error?: { code?: string; message?: string } } | null;
+    throw new ApiError(res.status, body?.error?.message ?? "Request failed", body?.error?.code);
+  }
   return res.json() as Promise<T>;
+}
+
+/** Cursor-paginated list response from the API. */
+export interface Page<T> {
+  items: T[];
+  nextCursor: string | null;
 }
 
 const clone = <T>(value: T): T => structuredClone(value);
 
 // ---------------------------------------------------------------------------
-// Auth (phone-first, OTP verified)
+// Users & profiles (sign-in and the current user live in auth-client.ts and
+// session.ts)
 // ---------------------------------------------------------------------------
-
-const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-export async function login(input: { identifier: string; password: string }) {
-  await wait(700);
-  if (input.password.length < 6) throw new ApiError(401, "Incorrect phone/email or password");
-  return { userId: CURRENT_USER_ID };
-}
-
-export async function register(input: { name: string; phone: string; email: string; password: string }) {
-  await wait(700);
-  return { userId: `u-${input.phone.slice(-4)}`, otpSentTo: input.phone };
-}
-
-export async function requestOtp(phoneOrEmail: string) {
-  await wait(500);
-  return { sentTo: phoneOrEmail };
-}
-
-export async function verifyOtp(target: string, code: string) {
-  await wait(700);
-  if (code.length !== 6) throw new ApiError(400, "Invalid code");
-  return { verified: true, target };
-}
-
-export async function resetPassword(target: string, password: string) {
-  await wait(600);
-  return { ok: password.length >= 8 && !!target };
-}
-
-// ---------------------------------------------------------------------------
-// Users & profiles
-// ---------------------------------------------------------------------------
-
-export async function getCurrentUser(): Promise<User> {
-  return clone(db.users.find((u) => u.id === CURRENT_USER_ID)!);
-}
 
 export async function getUser(id: string): Promise<User | null> {
   const user = db.users.find((u) => u.id === id);
@@ -93,12 +69,6 @@ export async function getUser(id: string): Promise<User | null> {
 export async function getProfile(username: string): Promise<User | null> {
   const user = db.users.find((u) => u.username === username);
   return user ? clone(user) : null;
-}
-
-export async function updateProfile(patch: Partial<Pick<User, "name" | "email" | "phone" | "area" | "bio">>) {
-  const user = db.users.find((u) => u.id === CURRENT_USER_ID)!;
-  Object.assign(user, patch);
-  return clone(user);
 }
 
 export async function getReviews(targetUserId: string) {
@@ -124,82 +94,60 @@ export interface ListingFilters {
   q?: string;
   category?: ListingCategory;
   area?: Area;
+  /** Seller's username. */
+  seller?: string;
   minPrice?: number;
   maxPrice?: number;
   condition?: Condition;
   delivery?: DeliveryMethod;
   sort?: SortOption;
+  /** Page size, 1–50. */
+  limit?: number;
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function listingQuery({ q, sort, limit = 50, ...rest }: ListingFilters) {
+  const params = new URLSearchParams();
+  // Old shared links can carry sorts the API no longer accepts (e.g. "nearest").
+  const entries = { ...rest, q: q?.trim(), sort: SORT_OPTIONS.some((o) => o.id === sort) ? sort : undefined, limit };
+  for (const [key, value] of Object.entries(entries)) {
+    if (value != null && value !== "") params.set(key, String(value));
+  }
+  return `?${params}`;
+}
+
+/** First page of matching listings (up to `limit`, default 50). */
 export async function getListings(filters: ListingFilters = {}): Promise<Listing[]> {
-  const q = filters.q?.trim().toLowerCase();
-  let results = db.listings.filter((l) => l.status === "active");
-
-  if (q) {
-    results = results.filter(
-      (l) =>
-        l.title.toLowerCase().includes(q) ||
-        l.description.toLowerCase().includes(q) ||
-        l.category.includes(q) ||
-        l.area.toLowerCase().includes(q),
-    );
-  }
-  if (filters.category) results = results.filter((l) => l.category === filters.category);
-  if (filters.area) results = results.filter((l) => l.area === filters.area);
-  if (filters.condition) results = results.filter((l) => l.condition === filters.condition);
-  if (filters.delivery) {
-    results = results.filter((l) => l.delivery === filters.delivery || l.delivery === "both");
-  }
-  if (filters.minPrice != null) results = results.filter((l) => l.price >= filters.minPrice!);
-  if (filters.maxPrice != null) results = results.filter((l) => l.price <= filters.maxPrice!);
-
-  switch (filters.sort) {
-    case "nearest":
-      results.sort((a, b) => a.distanceKm - b.distanceKm);
-      break;
-    case "newest":
-      results.sort((a, b) => b.postedAt.localeCompare(a.postedAt));
-      break;
-    case "price-asc":
-      results.sort((a, b) => a.price - b.price);
-      break;
-    case "price-desc":
-      results.sort((a, b) => b.price - a.price);
-      break;
-    default:
-      results.sort((a, b) => b.views - a.views);
-  }
-  return clone(results);
-}
-
-export async function getNearbyListings(limit = 6) {
-  return (await getListings({ sort: "nearest" })).slice(0, limit);
-}
-
-export async function getRecommendedListings(limit = 4) {
-  return (await getListings({ sort: "recommended" })).slice(0, limit);
+  const page = await request<Page<Listing>>(`/listings${listingQuery(filters)}`);
+  return page.items;
 }
 
 export async function getListing(id: string): Promise<Listing | null> {
-  const listing = db.listings.find((l) => l.id === id);
-  return listing ? clone(listing) : null;
+  // Mock orders and chats still reference mock listing ids ("l-1003") until
+  // those modules move to the API.
+  if (!UUID_RE.test(id)) {
+    const listing = db.listings.find((l) => l.id === id);
+    return listing ? clone(listing) : null;
+  }
+  try {
+    return await request<Listing>(`/listings/${id}`);
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 404) return null;
+    throw e;
+  }
 }
 
 export async function getSimilarListings(id: string, limit = 4) {
-  const listing = db.listings.find((l) => l.id === id);
+  const listing = await getListing(id);
   if (!listing) return [];
-  return clone(
-    db.listings
-      .filter((l) => l.id !== id && l.category === listing.category && l.status === "active")
-      .slice(0, limit),
-  );
+  const sameCategory = await getListings({ category: listing.category, limit: limit + 1 });
+  return sameCategory.filter((l) => l.id !== id).slice(0, limit);
 }
 
-export async function getMyListings() {
-  return clone(db.listings.filter((l) => l.sellerId === CURRENT_USER_ID));
-}
-
-export async function getSavedListings() {
+/** Saved items are mock data, so only the demo user has any. */
+export async function getSavedListings(userId: string) {
+  if (userId !== CURRENT_USER_ID) return [];
   const saved = ["l-1003", "l-1010", "l-1009"];
   return clone(db.listings.filter((l) => saved.includes(l.id)));
 }
@@ -292,10 +240,10 @@ export async function acceptOffer(offerId: string) {
 // Orders, payments & disputes
 // ---------------------------------------------------------------------------
 
-export async function getOrders(role: "buying" | "selling") {
+export async function getOrders(role: "buying" | "selling", userId = CURRENT_USER_ID) {
   return clone(
     db.orders
-      .filter((o) => (role === "buying" ? o.buyerId : o.sellerId) === CURRENT_USER_ID)
+      .filter((o) => (role === "buying" ? o.buyerId : o.sellerId) === userId)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
   );
 }
@@ -357,9 +305,14 @@ export async function getConversationIdForUser(userId: string) {
 export async function getConversation(id: string) {
   let conversation = db.conversations.find((c) => c.id === id);
   if (!conversation && id.startsWith("new-")) {
-    const listing = db.listings.find((l) => l.id === id.slice(4));
+    const listing = await getListing(id.slice(4));
     if (!listing) return null;
-    conversation = { id, participantId: listing.sellerId, listingId: listing.id, lastMessage: "", lastAt: listing.postedAt, unread: 0 };
+    // Messaging is still mock data, so match the API's seller to a mock user by username.
+    const participantId = listing.seller
+      ? db.users.find((u) => u.username === listing.seller!.username)?.id
+      : listing.sellerId;
+    if (!participantId) return null;
+    conversation = { id, participantId, listingId: listing.id, lastMessage: "", lastAt: listing.postedAt, unread: 0 };
   }
   if (!conversation) return null;
   return {
@@ -442,7 +395,8 @@ export async function getAdminPayouts() {
 
 /** Static ids for prerendering dynamic routes. */
 export const staticIds = {
-  listings: () => db.listings.map((l) => ({ id: l.id })),
+  /** The most-viewed listings; the rest render on first visit. */
+  listings: async () => (await getListings({ limit: 20 })).map((l) => ({ id: l.id })),
   providers: () => db.providers.map((p) => ({ id: p.id })),
   tasks: () => db.tasks.map((t) => ({ id: t.id })),
   orders: () => db.orders.map((o) => ({ id: o.id })),

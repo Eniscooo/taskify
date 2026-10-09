@@ -1,5 +1,6 @@
 import { Bookmark, Package, Pencil, Share2 } from "lucide-react";
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { PageHeader } from "@/components/layout/page-header";
 import { ProductGrid } from "@/components/marketplace/product-card";
 import { ProfileHeader, ProfileStats } from "@/components/profile/profile-header";
@@ -8,18 +9,29 @@ import { ReviewList } from "@/components/profile/review-card";
 import { WalletCard } from "@/components/profile/wallet-card";
 import { ButtonLink } from "@/components/ui/button";
 import { SectionHeader } from "@/components/ui/card";
+import { ProfileSkeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/states";
-import { getCurrentUser, getMyListings, getOrders, getReviews, getSavedListings } from "@/lib/api";
+import { getOrders, getReviews, getSavedListings } from "@/lib/api";
+import { cachedListings } from "@/lib/data/listings";
+import { requireUser } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Your profile" };
 
-export default async function ProfilePage() {
-  const user = await getCurrentUser();
+export default function ProfilePage() {
+  return (
+    <Suspense fallback={<ProfileSkeleton />}>
+      <Profile />
+    </Suspense>
+  );
+}
+
+async function Profile() {
+  const user = await requireUser("/profile");
   const [listings, saved, reviews, selling] = await Promise.all([
-    getMyListings(),
-    getSavedListings(),
+    cachedListings({ seller: user.username }),
+    getSavedListings(user.id),
     getReviews(user.id),
-    getOrders("selling"),
+    getOrders("selling", user.id),
   ]);
   const held = selling
     .filter((o) => o.status === "held" || o.status === "handed-over")

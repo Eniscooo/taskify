@@ -15,6 +15,29 @@ export const envSchema = z.object({
   REDIS_URL: z.url({ protocol: /^rediss?$/ }),
   /** Public CDN base for uploaded media (Cloudflare R2 behind a custom domain). */
   MEDIA_BASE_URL: z.url().default('https://media.naijamarket.ng'),
+
+  /** Signs session cookies. Generate with `openssl rand -base64 32`. */
+  BETTER_AUTH_SECRET: z
+    .string()
+    .min(32, 'must be at least 32 characters')
+    .refine((s) => !s.startsWith('replace-with'), 'replace the placeholder from .env.example'),
+  /** Public origin of this API, e.g. https://api.naijamarket.ng. */
+  BETTER_AUTH_URL: z.url(),
+  /**
+   * Parent domain for the session cookie (e.g. "naijamarket.ng") so the web
+   * app on naijamarket.ng can read it. Leave unset for localhost.
+   */
+  COOKIE_DOMAIN: z.string().optional(),
+  /**
+   * How OTP codes are delivered. "console" logs them and is for development
+   * only; a real SMS provider is required in production.
+   */
+  SMS_PROVIDER: z.enum(['console']).default('console'),
+  /** Number of reverse proxies in front of the API, so client IPs are read correctly. */
+  TRUST_PROXY_HOPS: z.coerce.number().int().min(0).default(0),
+}).refine((env) => env.NODE_ENV !== 'production' || env.SMS_PROVIDER !== 'console', {
+  path: ['SMS_PROVIDER'],
+  message: 'a real SMS provider is required in production',
 });
 
 export type Env = z.infer<typeof envSchema>;

@@ -26,6 +26,12 @@ export class ListListingsQuery {
   @MaxLength(50)
   area?: string;
 
+  @ApiPropertyOptional({ description: "Seller's username", example: 'tunde' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  seller?: string;
+
   @ApiPropertyOptional({ description: 'Minimum price in naira' })
   @IsOptional()
   @Type(() => Number)

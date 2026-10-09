@@ -5,7 +5,7 @@
 // - Money is stored as BigInt kobo (₦1 = 100 kobo), matching Paystack.
 // - Every column used for filtering or sorting is indexed.
 //
-// This first migration covers accounts and the P2P marketplace. Services,
+// So far this covers accounts, auth and the P2P marketplace. Services,
 // tasks, orders, payments, ledger, messaging, reviews and disputes are added
 // in their own migrations as each module is built.
 
@@ -54,24 +54,86 @@ enum DeliveryMethod {
   @@map("delivery_method")
 }
 
+// Accounts. User, Session, Account and Verification are managed by Better
+// Auth (src/auth). Its field names are mapped in auth.ts: `phoneNumber` is
+// `phone` and `phoneNumberVerified` is `phoneVerified`.
 model User {
-  id              String     @id @default(uuid(7)) @db.Uuid
-  username        String     @unique
-  name            String
-  phone           String     @unique
-  email           String     @unique
-  phoneVerifiedAt DateTime?  @map("phone_verified_at")
-  emailVerifiedAt DateTime?  @map("email_verified_at")
-  idVerifiedAt    DateTime?  @map("id_verified_at")
-  area            String
-  bio             String?
-  status          UserStatus @default(active)
-  createdAt       DateTime   @default(now()) @map("created_at")
-  updatedAt       DateTime   @updatedAt @map("updated_at")
+  id            String     @id @default(uuid(7)) @db.Uuid
+  // Generated from the name at sign-up; used in public profile URLs.
+  username      String     @unique
+  name          String
+  // E.164, e.g. +2348034127790.
+  phone         String     @unique
+  phoneVerified Boolean    @default(false) @map("phone_verified")
+  email         String     @unique
+  emailVerified Boolean    @default(false) @map("email_verified")
+  image         String?
+  idVerifiedAt  DateTime?  @map("id_verified_at")
+  // Default location; set from the profile after sign-up.
+  area          String?
+  bio           String?
+  status        UserStatus @default(active)
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @updatedAt @map("updated_at")
 
   listings Listing[]
+  sessions Session[]
+  accounts Account[]
 
   @@map("users")
+}
+
+model Session {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  token     String   @unique
+  expiresAt DateTime @map("expires_at")
+  ipAddress String?  @map("ip_address")
+  userAgent String?  @map("user_agent")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+// A sign-in method for a user. Password logins use providerId "credential"
+// with a scrypt hash in `password`; social logins would add rows here.
+model Account {
+  id                    String    @id @default(uuid(7)) @db.Uuid
+  userId                String    @map("user_id") @db.Uuid
+  accountId             String    @map("account_id")
+  providerId            String    @map("provider_id")
+  accessToken           String?   @map("access_token")
+  refreshToken          String?   @map("refresh_token")
+  idToken               String?   @map("id_token")
+  accessTokenExpiresAt  DateTime? @map("access_token_expires_at")
+  refreshTokenExpiresAt DateTime? @map("refresh_token_expires_at")
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, accountId])
+  @@index([userId])
+  @@map("accounts")
+}
+
+// Short-lived one-time codes (SMS OTPs, password reset codes).
+model Verification {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  identifier String
+  value      String
+  expiresAt  DateTime @map("expires_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@index([identifier])
+  @@map("verifications")
 }
 
 model Category {

@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { ProviderCard } from "@/components/hire/provider-card";
 import { SectionHeader } from "@/components/ui/card";
-import { EmptyState } from "@/components/ui/states";
+import { EmptyState, ErrorState } from "@/components/ui/states";
 import { GridSkeleton } from "@/components/ui/skeleton";
 import { getListings, getProviders, getSearchSuggestions, type ListingFilters } from "@/lib/api";
 import { LISTING_CATEGORIES } from "@/lib/constants";
@@ -24,7 +24,7 @@ export function SearchExperience() {
   const inputRef = useRef<HTMLInputElement>(null);
   const [filters, setFilters] = useState<ListingFilters>(() => filtersFromParams(params));
   const [text, setText] = useState(filters.q ?? "");
-  const [resultState, setResultState] = useState<{ key: string; listings: Listing[]; providers: Provider[] } | null>(null);
+  const [resultState, setResultState] = useState<{ key: string; listings: Listing[] | null; providers: Provider[] } | null>(null);
   const [suggestions, setSuggestions] = useState<{ recent: string[]; suggested: string[] }>({ recent: [], suggested: [] });
   const [sheetOpen, setSheetOpen] = useState(false);
 
@@ -43,7 +43,8 @@ export function SearchExperience() {
     window.history.replaceState(null, "", `${window.location.pathname}${queryKey}`);
     if (!hasQuery) return;
     let cancelled = false;
-    Promise.all([getListings(filters), getProviders({ q: filters.q })]).then(([listings, providers]) => {
+    // A failed listings fetch is kept as null so it shows an error rather than "no results".
+    Promise.all([getListings(filters).catch(() => null), getProviders({ q: filters.q })]).then(([listings, providers]) => {
       if (!cancelled) setResultState({ key: queryKey, listings, providers: filters.q ? providers : [] });
     });
     return () => {
@@ -130,6 +131,8 @@ export function SearchExperience() {
         />
       ) : !results ? (
         <GridSkeleton />
+      ) : results.listings === null ? (
+        <ErrorState title="Couldn't load listings" description="Check your connection and search again." />
       ) : results.listings.length + results.providers.length === 0 ? (
         <EmptyState
           icon={PackageSearch}

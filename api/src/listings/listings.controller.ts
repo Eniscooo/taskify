@@ -1,9 +1,11 @@
 import { Controller, Get, Param, ParseUUIDPipe, Query } from '@nestjs/common';
 import { ApiNotFoundResponse, ApiOkResponse, ApiTags } from '@nestjs/swagger';
+import { Public } from '../auth/decorators.js';
 import { ListListingsQuery } from './dto/list-listings.query.js';
 import { ListingPageResponse, ListingResponse } from './listing.mapper.js';
 import { ListingsService } from './listings.service.js';
 
+@Public()
 @ApiTags('listings')
 @Controller('listings')
 export class ListingsController {

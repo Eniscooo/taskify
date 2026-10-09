@@ -46,6 +46,7 @@ export class ListingsService {
     }
     if (query.category) where.category = { slug: query.category };
     if (query.area) where.area = query.area;
+    if (query.seller) where.seller = { username: query.seller };
     if (query.condition) where.condition = toDbEnum<ListingCondition>(query.condition);
     if (query.delivery) {
       // "both" listings satisfy either delivery preference.
