@@ -1,0 +1,136 @@
+// Naija Market database schema.
+//
+// Conventions:
+// - Table and column names are snake_case in Postgres (@@map / @map).
+// - Money is stored as BigInt kobo (₦1 = 100 kobo), matching Paystack.
+// - Every column used for filtering or sorting is indexed.
+//
+// This first migration covers accounts and the P2P marketplace. Services,
+// tasks, orders, payments, ledger, messaging, reviews and disputes are added
+// in their own migrations as each module is built.
+
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserStatus {
+  active
+  suspended
+
+  @@map("user_status")
+}
+
+enum ListingStatus {
+  draft
+  active
+  sold
+  flagged
+  removed
+
+  @@map("listing_status")
+}
+
+enum ListingCondition {
+  new
+  like_new
+  used_good
+  used_fair
+
+  @@map("listing_condition")
+}
+
+enum DeliveryMethod {
+  pickup
+  seller_delivers
+  both
+
+  @@map("delivery_method")
+}
+
+model User {
+  id              String     @id @default(uuid(7)) @db.Uuid
+  username        String     @unique
+  name            String
+  phone           String     @unique
+  email           String     @unique
+  phoneVerifiedAt DateTime?  @map("phone_verified_at")
+  emailVerifiedAt DateTime?  @map("email_verified_at")
+  idVerifiedAt    DateTime?  @map("id_verified_at")
+  area            String
+  bio             String?
+  status          UserStatus @default(active)
+  createdAt       DateTime   @default(now()) @map("created_at")
+  updatedAt       DateTime   @updatedAt @map("updated_at")
+
+  listings Listing[]
+
+  @@map("users")
+}
+
+model Category {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  slug      String   @unique
+  name      String
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  listings Listing[]
+
+  @@map("categories")
+}
+
+model Listing {
+  id          String           @id @default(uuid(7)) @db.Uuid
+  sellerId    String           @map("seller_id") @db.Uuid
+  categoryId  String           @map("category_id") @db.Uuid
+  title       String
+  description String
+  priceKobo   BigInt           @map("price_kobo")
+  condition   ListingCondition
+  delivery    DeliveryMethod
+  area        String
+  // Approximate pickup point; becomes a PostGIS geography column when
+  // radius search is added.
+  latitude    Decimal?         @db.Decimal(9, 6)
+  longitude   Decimal?         @db.Decimal(9, 6)
+  status      ListingStatus    @default(draft)
+  views       Int              @default(0)
+  publishedAt DateTime?        @map("published_at")
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+
+  seller   User           @relation(fields: [sellerId], references: [id])
+  category Category       @relation(fields: [categoryId], references: [id])
+  images   ListingImage[]
+
+  @@index([status, publishedAt(sort: Desc)])
+  @@index([status, categoryId])
+  @@index([status, area])
+  @@index([status, priceKobo])
+  @@index([status, views(sort: Desc)])
+  @@index([sellerId])
+  @@map("listings")
+}
+
+model ListingImage {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  listingId String   @map("listing_id") @db.Uuid
+  // Object key in R2/S3; the CDN URL is built from this.
+  storageKey String  @map("storage_key")
+  position   Int
+  width      Int?
+  height     Int?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  listing Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  @@unique([listingId, position])
+  @@map("listing_images")
+}

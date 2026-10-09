@@ -1,0 +1,16 @@
+node_modules
+dist
+coverage
+*.tsbuildinfo
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Generated Prisma client
+/src/generated/prisma
+
+# Local dev services (Postgres data, Redis binaries/data)
+.data
+.tools

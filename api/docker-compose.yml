@@ -1,0 +1,30 @@
+# Postgres (with PostGIS) + Redis for machines that have Docker.
+# On this Windows laptop use `npm run services` instead (no Docker needed).
+# Credentials match .env.example.
+services:
+  postgres:
+    image: postgis/postgis:18-3.6
+    environment:
+      POSTGRES_USER: naija
+      POSTGRES_PASSWORD: naija_dev_password
+      POSTGRES_DB: naija_market
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U naija -d naija_market"]
+      interval: 5s
+      retries: 10
+
+  redis:
+    image: redis:8
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+
+volumes:
+  postgres-data:
+  redis-data:
