@@ -13,6 +13,7 @@ export const toDbEnum = <T extends string>(v: string) => v.replace(/-/g, '_') as
 const toApiEnum = <T extends string>(v: string) => v.replace(/_/g, '-') as T;
 
 class ListingImageResponse {
+  @ApiProperty() key!: string;
   @ApiProperty() url!: string;
   @ApiProperty({ nullable: true, type: Number }) width!: number | null;
   @ApiProperty({ nullable: true, type: Number }) height!: number | null;
@@ -29,10 +30,12 @@ export class ListingResponse {
   @ApiProperty() id!: string;
   @ApiProperty() title!: string;
   @ApiProperty({ description: 'Whole naira', example: 385000 }) price!: number;
-  @ApiProperty({ example: 'phones' }) category!: string;
-  @ApiProperty({ enum: CONDITIONS }) condition!: ApiCondition;
+  @ApiProperty() negotiable!: boolean;
+  // Category, condition and delivery are only null on drafts.
+  @ApiProperty({ example: 'phones', nullable: true, type: String }) category!: string | null;
+  @ApiProperty({ enum: CONDITIONS, nullable: true }) condition!: ApiCondition | null;
   @ApiProperty({ example: 'Yaba' }) area!: string;
-  @ApiProperty({ enum: DELIVERY_METHODS }) delivery!: ApiDelivery;
+  @ApiProperty({ enum: DELIVERY_METHODS, nullable: true }) delivery!: ApiDelivery | null;
   @ApiProperty() description!: string;
   @ApiProperty() photoCount!: number;
   @ApiProperty({ type: [ListingImageResponse] }) images!: ListingImageResponse[];
@@ -58,13 +61,19 @@ export function toListingResponse(l: ListingWithRelations, mediaBaseUrl: string)
     id: l.id,
     title: l.title,
     price: koboToNaira(l.priceKobo),
-    category: l.category.slug,
-    condition: toApiEnum<ApiCondition>(l.condition satisfies ListingCondition),
+    negotiable: l.negotiable,
+    category: l.category?.slug ?? null,
+    condition: l.condition && toApiEnum<ApiCondition>(l.condition satisfies ListingCondition),
     area: l.area,
-    delivery: toApiEnum<ApiDelivery>(l.delivery satisfies DeliveryMethod),
+    delivery: l.delivery && toApiEnum<ApiDelivery>(l.delivery satisfies DeliveryMethod),
     description: l.description,
     photoCount: l.images.length,
-    images: l.images.map((img) => ({ url: `${mediaBaseUrl}/${img.storageKey}`, width: img.width, height: img.height })),
+    images: l.images.map((img) => ({
+      key: img.storageKey,
+      url: `${mediaBaseUrl}/${img.storageKey}`,
+      width: img.width,
+      height: img.height,
+    })),
     sellerId: l.sellerId,
     // Full name and contact details stay private; only a short display name is public.
     seller: {

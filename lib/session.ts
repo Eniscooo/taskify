@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { cache } from "react";
 import { API_BASE_URL, DEFAULT_AREA } from "./constants";
 import { users as mockUsers } from "./mock-data";
-import type { Area, User } from "./types";
+import type { Area, MyListing, User } from "./types";
 
 /** GET /v1/me */
 interface MeResponse {
@@ -14,6 +14,7 @@ interface MeResponse {
   phone: string;
   phoneVerified: boolean;
   email: string;
+  emailVerified: boolean;
   verified: boolean;
   area: string | null;
   bio: string | null;
@@ -40,9 +41,23 @@ function toUser(me: MeResponse): User {
     area: (me.area ?? DEFAULT_AREA) as Area,
     verified: me.verified,
     phoneVerified: me.phoneVerified,
+    emailVerified: me.emailVerified,
     joinedAt: me.joinedAt,
     bio: me.bio ?? undefined,
   };
+}
+
+/**
+ * Calls the API as the signed-in user by forwarding their cookies. Returns
+ * null when they're signed out. Reads cookies, so call it inside <Suspense>.
+ */
+export async function fetchAsUser<T>(path: string): Promise<T | null> {
+  const cookie = (await cookies()).toString();
+  if (!cookie) return null;
+  const res = await fetch(`${API_BASE_URL}${path}`, { headers: { cookie } });
+  if (res.status === 401) return null;
+  if (!res.ok) throw new Error(`GET ${path} failed with ${res.status}`);
+  return (await res.json()) as T;
 }
 
 /**
@@ -50,13 +65,14 @@ function toUser(me: MeResponse): User {
  * <Suspense> boundary. Deduplicated per request.
  */
 export const getSessionUser = cache(async (): Promise<User | null> => {
-  const cookie = (await cookies()).toString();
-  if (!cookie) return null;
-  const res = await fetch(`${API_BASE_URL}/me`, { headers: { cookie } });
-  if (res.status === 401) return null;
-  if (!res.ok) throw new Error(`GET /me failed with ${res.status}`);
-  return toUser((await res.json()) as MeResponse);
+  const me = await fetchAsUser<MeResponse>("/me");
+  return me && toUser(me);
 });
+
+/** The signed-in seller's listings, drafts and sold ones included. */
+export async function getMyListings(): Promise<MyListing[]> {
+  return (await fetchAsUser<MyListing[]>("/me/listings")) ?? [];
+}
 
 /** The signed-in user; sends visitors to log in first. */
 export async function requireUser(returnTo: string): Promise<User> {

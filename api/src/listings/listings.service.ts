@@ -8,7 +8,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import type { ListListingsQuery, ListingSort } from './dto/list-listings.query.js';
 import { toDbEnum, toListingResponse, type ListingResponse } from './listing.mapper.js';
 
-const listingInclude = {
+export const listingInclude = {
   category: { select: { slug: true } },
   seller: { select: { id: true, username: true, name: true, idVerifiedAt: true } },
   images: { orderBy: { position: 'asc' }, select: { storageKey: true, width: true, height: true } },

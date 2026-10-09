@@ -1,5 +1,5 @@
 import { createAuthClient } from "better-auth/react";
-import { inferAdditionalFields, phoneNumberClient } from "better-auth/client/plugins";
+import { emailOTPClient, inferAdditionalFields, phoneNumberClient } from "better-auth/client/plugins";
 import { API_BASE_URL } from "./constants";
 
 /**
@@ -11,6 +11,7 @@ export const authClient = createAuthClient({
   fetchOptions: { credentials: "include" },
   plugins: [
     phoneNumberClient(),
+    emailOTPClient(),
     inferAdditionalFields({
       user: {
         username: { type: "string", required: false, input: false },

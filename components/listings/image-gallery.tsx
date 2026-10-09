@@ -2,14 +2,15 @@
 
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useRef, useState } from "react";
-import { PlaceholderImage } from "@/components/ui/placeholder-image";
+import { ListingPhoto } from "@/components/ui/listing-photo";
+import type { ListingImage } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 /**
  * Swipeable gallery built on native scroll-snap (no JS gesture lib), with
  * arrow buttons and thumbnails on larger screens and keyboard support.
  */
-export function ImageGallery({ title, count }: { title: string; count: number }) {
+export function ImageGallery({ title, count, images }: { title: string; count: number; images?: ListingImage[] }) {
   const trackRef = useRef<HTMLDivElement>(null);
   const [index, setIndex] = useState(0);
 
@@ -44,7 +45,7 @@ export function ImageGallery({ title, count }: { title: string; count: number })
               aria-label={`${i + 1} of ${count}`}
               className="h-full w-full shrink-0 snap-center"
             >
-              <PlaceholderImage title={title} index={i} className="h-full w-full" />
+              <ListingPhoto url={images?.[i]?.url} title={title} index={i} className="h-full w-full" />
             </div>
           ))}
         </div>
@@ -100,7 +101,7 @@ export function ImageGallery({ title, count }: { title: string; count: number })
               i === index ? "border-brand" : "border-transparent opacity-70 hover:opacity-100",
             )}
           >
-            <PlaceholderImage title={title} index={i} className="h-full w-full" iconClassName="h-1/2 w-1/2" />
+            <ListingPhoto url={images?.[i]?.url} title={title} index={i} className="h-full w-full" iconClassName="h-1/2 w-1/2" />
             <span className="sr-only">Show photo {i + 1}</span>
           </button>
         ))}

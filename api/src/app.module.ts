@@ -6,8 +6,10 @@ import { AuthModule } from './auth/auth.module.js';
 import { SessionGuard } from './auth/session.guard.js';
 import { CategoriesModule } from './categories/categories.module.js';
 import { validateEnv } from './config/env.js';
+import { EmailModule } from './email/email.module.js';
 import { HealthModule } from './health/health.module.js';
 import { ListingsModule } from './listings/listings.module.js';
+import { MediaModule } from './media/media.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { RedisThrottlerStorage } from './redis/redis-throttler.storage.js';
 import { RedisModule } from './redis/redis.module.js';
@@ -33,6 +35,8 @@ import { UsersModule } from './users/users.module.js';
       }),
     }),
     SmsModule,
+    EmailModule,
+    MediaModule,
     AuthModule,
     HealthModule,
     UsersModule,

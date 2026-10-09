@@ -148,28 +148,33 @@ model Category {
   @@map("categories")
 }
 
+// Drafts can be saved half-filled, so category, condition and delivery may
+// be null and the other details empty. Publishing requires all of them (see
+// ListingsService), so active and sold listings are always complete.
 model Listing {
-  id          String           @id @default(uuid(7)) @db.Uuid
-  sellerId    String           @map("seller_id") @db.Uuid
-  categoryId  String           @map("category_id") @db.Uuid
+  id          String            @id @default(uuid(7)) @db.Uuid
+  sellerId    String            @map("seller_id") @db.Uuid
+  categoryId  String?           @map("category_id") @db.Uuid
   title       String
-  description String
-  priceKobo   BigInt           @map("price_kobo")
-  condition   ListingCondition
-  delivery    DeliveryMethod
-  area        String
+  description String            @default("")
+  priceKobo   BigInt            @default(0) @map("price_kobo")
+  // Seller is open to offers.
+  negotiable  Boolean           @default(true)
+  condition   ListingCondition?
+  delivery    DeliveryMethod?
+  area        String            @default("")
   // Approximate pickup point; becomes a PostGIS geography column when
   // radius search is added.
-  latitude    Decimal?         @db.Decimal(9, 6)
-  longitude   Decimal?         @db.Decimal(9, 6)
-  status      ListingStatus    @default(draft)
-  views       Int              @default(0)
-  publishedAt DateTime?        @map("published_at")
-  createdAt   DateTime         @default(now()) @map("created_at")
-  updatedAt   DateTime         @updatedAt @map("updated_at")
+  latitude    Decimal?          @db.Decimal(9, 6)
+  longitude   Decimal?          @db.Decimal(9, 6)
+  status      ListingStatus     @default(draft)
+  views       Int               @default(0)
+  publishedAt DateTime?         @map("published_at")
+  createdAt   DateTime          @default(now()) @map("created_at")
+  updatedAt   DateTime          @updatedAt @map("updated_at")
 
   seller   User           @relation(fields: [sellerId], references: [id])
-  category Category       @relation(fields: [categoryId], references: [id])
+  category Category?      @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   images   ListingImage[]
 
   @@index([status, publishedAt(sort: Desc)])
@@ -182,10 +187,10 @@ model Listing {
 }
 
 model ListingImage {
-  id        String   @id @default(uuid(7)) @db.Uuid
-  listingId String   @map("listing_id") @db.Uuid
+  id         String   @id @default(uuid(7)) @db.Uuid
+  listingId  String   @map("listing_id") @db.Uuid
   // Object key in R2/S3; the CDN URL is built from this.
-  storageKey String  @map("storage_key")
+  storageKey String   @map("storage_key")
   position   Int
   width      Int?
   height     Int?

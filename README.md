@@ -21,15 +21,16 @@ Copy `.env.example` to `.env.local` if the API isn't on `http://localhost:4000/v
 
 Every seeded user has the password `naija1234`. The demo user is Adaeze: sign in with `0803 412 7790` or `adaeze.okafor@gmail.com`.
 
-New accounts get a 6-digit SMS code. In development, codes are printed in the API terminal instead of being texted.
+New accounts get a 6-digit SMS code. In development, SMS codes and emails are printed in the API terminal instead of being sent.
 
 ## What's real and what's mock
 
 | Area | Source |
 |---|---|
-| Sign-up, login, phone verification, password reset, sessions | API (Better Auth) |
+| Sign-up, login, phone and email verification, password reset (SMS or email), sessions | API (Better Auth) |
 | Your profile details (name, area, bio) | API |
 | Listings: browse, search, filters, detail, seller's listings | API |
+| Selling: photo uploads, publish, drafts, edit, mark sold, My Listings | API |
 | Orders, payments, messages, reviews, notifications, providers, tasks, admin | Mock data in `lib/mock-data.ts` |
 
 Mock data still uses mock ids (`u-me`, `l-1003`). Seeded users keep their mock id in the web app, so Adaeze still sees her demo orders and messages. New accounts start empty.

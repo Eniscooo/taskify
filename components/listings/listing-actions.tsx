@@ -1,11 +1,14 @@
 "use client";
 
-import { MessageCircle } from "lucide-react";
+import { Loader2, MessageCircle } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { StickyActionBar } from "@/components/layout/sticky-action-bar";
 import { CheckoutSheet } from "@/components/payments/checkout-sheet";
 import { Button, ButtonLink } from "@/components/ui/button";
-import { createOrder } from "@/lib/api";
+import { useToast } from "@/components/ui/toast";
+import { refreshListings } from "@/lib/actions/listings";
+import { createOrder, updateListing } from "@/lib/api";
 import { authClient } from "@/lib/auth-client";
 import { formatNaira } from "@/lib/formatters";
 import type { Listing } from "@/lib/types";
@@ -21,20 +24,47 @@ export function ListingActions({
   sellerUsername: string;
   conversationHref: string;
 }) {
+  const router = useRouter();
+  const toast = useToast();
   const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
   // Checked in the browser so the listing page stays the same (and cached) for everyone.
   const { data: session } = authClient.useSession();
   const isOwner = session?.user.username === sellerUsername;
 
+  const sold = listing.status === "sold";
+
   if (isOwner) {
+    const toggleSold = async () => {
+      setSaving(true);
+      try {
+        await updateListing(listing.id, { status: sold ? "active" : "sold" });
+        await refreshListings(listing.id);
+        toast(sold ? "Listed for sale again" : "Marked as sold");
+        router.refresh();
+      } catch {
+        toast("Couldn't update the listing. Try again.", "error");
+      } finally {
+        setSaving(false);
+      }
+    };
     return (
       <StickyActionBar>
-        <ButtonLink href="/profile" variant="outline" size="lg" className="flex-1">
-          Manage listing
-        </ButtonLink>
-        <ButtonLink href="/sell" size="lg" className="flex-1">
+        <Button variant="outline" size="lg" className="flex-1" onClick={toggleSold} disabled={saving}>
+          {saving && <Loader2 aria-hidden className="h-5 w-5 animate-spin" />}
+          {sold ? "Relist" : "Mark as sold"}
+        </Button>
+        <ButtonLink href={`/sell?edit=${listing.id}`} size="lg" className="flex-1">
           Edit
         </ButtonLink>
+      </StickyActionBar>
+    );
+  }
+
+  if (sold) {
+    return (
+      <StickyActionBar>
+        <p className="flex-1 text-center font-semibold text-muted">This item has been sold</p>
       </StickyActionBar>
     );
   }

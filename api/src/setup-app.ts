@@ -8,6 +8,7 @@ import helmet from 'helmet';
 import { AUTH, AUTH_BASE_PATH, CLIENT_IP_HEADER, type Auth } from './auth/auth.js';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter.js';
 import type { Env } from './config/env.js';
+import { StorageService } from './media/storage.service.js';
 
 export const API_PREFIX = 'v1';
 
@@ -37,6 +38,18 @@ export function setupApp(app: NestExpressApplication) {
   });
   app.useBodyParser('json');
   app.useBodyParser('urlencoded', { extended: true });
+
+  // Local media storage is served by the API itself. Uploads are processed
+  // images with random names, so they're safe to serve publicly and cache.
+  if (config.get('MEDIA_STORAGE', { infer: true }) === 'local') {
+    app.useStaticAssets(app.get(StorageService).root, {
+      prefix: '/media/',
+      immutable: true,
+      maxAge: '365d',
+      // Let the web app (another origin) show these images.
+      setHeaders: (res) => res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin'),
+    });
+  }
 
   app.useGlobalPipes(
     new ValidationPipe({

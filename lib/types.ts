@@ -41,6 +41,8 @@ export interface User {
   area: Area;
   verified: boolean;
   phoneVerified: boolean;
+  /** Only known for the signed-in user. */
+  emailVerified?: boolean;
   rating: number;
   reviewCount: number;
   salesCount: number;
@@ -64,12 +66,30 @@ export interface Listing {
   sellerId: string;
   /** Public seller summary. Present on listings served by the API. */
   seller?: ListingSeller;
+  /** Photos in order (cover first). Present on listings served by the API. */
+  images?: ListingImage[];
+  /** Seller is open to offers. */
+  negotiable?: boolean;
   postedAt: string;
   /** Distance from the viewer. Only mock data has it until location search lands. */
   distanceKm?: number;
   status: "active" | "draft" | "sold" | "flagged" | "removed";
   views: number;
 }
+
+export interface ListingImage {
+  key: string;
+  url: string;
+  width: number | null;
+  height: number | null;
+}
+
+/** A listing as its seller sees it: drafts may be missing details. */
+export type MyListing = Omit<Listing, "category" | "condition" | "delivery"> & {
+  category: ListingCategory | null;
+  condition: Condition | null;
+  delivery: DeliveryMethod | null;
+};
 
 export interface ListingSeller {
   id: string;

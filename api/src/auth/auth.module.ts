@@ -1,6 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Env } from '../config/env.js';
+import { EmailService } from '../email/email.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { RedisService } from '../redis/redis.service.js';
 import { SmsService } from '../sms/sms.service.js';
@@ -12,8 +13,14 @@ import { SessionGuard } from './session.guard.js';
   providers: [
     {
       provide: AUTH,
-      inject: [ConfigService, PrismaService, RedisService, SmsService],
-      useFactory: (config: ConfigService<Env, true>, prisma: PrismaService, redis: RedisService, sms: SmsService) =>
+      inject: [ConfigService, PrismaService, RedisService, SmsService, EmailService],
+      useFactory: (
+        config: ConfigService<Env, true>,
+        prisma: PrismaService,
+        redis: RedisService,
+        sms: SmsService,
+        email: EmailService,
+      ) =>
         createAuth({
           env: {
             NODE_ENV: config.get('NODE_ENV', { infer: true }),
@@ -25,6 +32,7 @@ import { SessionGuard } from './session.guard.js';
           prisma,
           redis,
           sms,
+          email,
         }),
     },
     SessionGuard,

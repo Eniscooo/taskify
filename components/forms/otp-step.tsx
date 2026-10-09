@@ -3,25 +3,29 @@
 import { Loader2, MessageSquareText } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { formatNigerianPhone } from "@/lib/validation";
 import { OtpInput } from "./otp-input";
 
 const RESEND_SECONDS = 30;
 
 /**
- * SMS code step shared by sign-up, sign-in and password reset. `onSubmit`
- * throws an Error whose message is shown under the code boxes.
+ * 6-digit code step shared by sign-up, sign-in, password reset and email
+ * verification. `onSubmit` throws an Error whose message is shown under the
+ * code boxes.
  */
 export function OtpStep({
-  phone,
+  sentTo,
+  via = "SMS",
+  changeLabel = "Change number",
   title = "Verify your phone",
   initialError,
   onSubmit,
   onResend,
   onBack,
 }: {
-  /** E.164, e.g. +2348034127790. */
-  phone: string;
+  /** Where the code went, as shown to the user, e.g. "0803 412 7790". */
+  sentTo: string;
+  via?: "SMS" | "email";
+  changeLabel?: string;
   title?: string;
   initialError?: string;
   onSubmit: (code: string) => Promise<void>;
@@ -46,7 +50,7 @@ export function OtpStep({
     try {
       await onSubmit(code);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "That code didn't work. Check the SMS and try again.");
+      setError(err instanceof Error ? err.message : "That code didn't work. Check it and try again.");
     } finally {
       setVerifying(false);
     }
@@ -71,9 +75,9 @@ export function OtpStep({
         </span>
         <h1 className="text-2xl font-extrabold tracking-tight">{title}</h1>
         <p className="mt-1 text-muted">
-          We sent a 6-digit code by SMS to <strong className="text-foreground">{formatNigerianPhone(phone)}</strong>.{" "}
+          We sent a 6-digit code by {via} to <strong className="text-foreground">{sentTo}</strong>.{" "}
           <button type="button" onClick={onBack} className="font-semibold text-brand hover:underline">
-            Change number
+            {changeLabel}
           </button>
         </p>
       </div>

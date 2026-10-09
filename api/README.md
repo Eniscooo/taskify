@@ -27,7 +27,7 @@ npm run db:deploy           # apply migrations
 npm run db:seed             # load the web app's mock users and listings
 ```
 
-Seeded users sign in with the password `naija1234`. SMS codes are printed in the `start:dev` terminal.
+Seeded users sign in with the password `naija1234`. SMS codes and emails are printed in the `start:dev` terminal.
 
 If you have Docker, `docker compose up -d` replaces `npm run services`. It also includes PostGIS.
 
@@ -87,10 +87,12 @@ src/
 ├── redis/                   RedisService + Redis rate-limit storage (global)
 ├── auth/                    Better Auth config, SessionGuard, @Public(), @CurrentUser()
 ├── sms/                     SmsService (logs to the console for now)
+├── email/                   EmailService (Resend, or console in development) + templates
+├── media/                   photo uploads, StorageService (local disk for now)
 ├── users/                   GET /v1/me
 ├── health/                  GET /v1/health (db + redis)
 ├── categories/              GET /v1/categories
-└── listings/                GET /v1/listings, GET /v1/listings/:id
+└── listings/                browse, plus create/edit/sell/remove and the seller's own listings
 ```
 
 Following the build plan, these modules come next, each with its own migration: tasks and providers, messaging, orders, payments and ledger, reviews, notifications, disputes and admin.
@@ -115,6 +117,7 @@ Following the build plan, these modules come next, each with its own migration: 
 2. `POST /v1/auth/phone-number/send-otp`, then `POST /v1/auth/phone-number/verify` with the 6-digit code. Verifying signs the user in.
 3. Later sign-ins use `POST /v1/auth/sign-in/phone-number` or `/sign-in/email` with the password.
 4. Password reset: `POST /v1/auth/phone-number/request-password-reset`, then `/phone-number/reset-password` with the code and new password. This signs out every other session.
+5. Email works the same way: `/email-otp/request-password-reset` and `/email-otp/reset-password` for resets, and `/email-otp/send-verification-otp` plus `/email-otp/verify-email` to verify the address.
 
 **Rules**
 
@@ -123,6 +126,7 @@ Following the build plan, these modules come next, each with its own migration: 
 - Codes are only texted to numbers that belong to an account awaiting verification. This stops the public endpoint from being used to send SMS to anyone.
 - A verified phone number can't be used for a second account. An unverified sign-up doesn't keep the number reserved.
 - Usernames are generated from the name, e.g. `adaeze.o`.
+- Email codes are only for verifying the address and resetting the password. Passwordless email sign-in and email changes are switched off (`disabledPaths` in `auth.ts`).
 
 **Sessions**
 
@@ -138,15 +142,31 @@ Following the build plan, these modules come next, each with its own migration: 
 
 **Errors** from `/v1/auth/*` come from Better Auth and look like `{ "code": "INVALID_OTP", "message": "Invalid OTP" }`, not the `{ error: {...} }` envelope.
 
+**Email** goes through Resend when `EMAIL_PROVIDER=resend`, with `RESEND_API_KEY` and `EMAIL_FROM` set. The sender's domain must be verified in Resend. With `console`, emails are printed instead; production refuses `console`.
+
 **In route handlers**, every route needs a session by default. Use `@Public()` for open routes and `@CurrentUser()` to get the signed-in user.
 | GET | `/v1/listings/:id` | Active or sold listings only |
+| POST | `/v1/uploads/listing-photo` | Multipart `file`. Returns `{ key, url, width, height }` |
+| POST | `/v1/listings` | Publish (default) or `status: "draft"`. `photos` takes upload keys |
+| PATCH | `/v1/listings/:id` | Seller only: edit, publish a draft, mark `sold`, relist |
+| DELETE | `/v1/listings/:id` | Seller only: removes the listing |
+| GET | `/v1/me/listings` | The seller's listings in every status, drafts included |
+| GET | `/v1/me/listings/:id` | One of them, for editing |
+
+## Listings and photos
+
+- **Uploads:** the browser sends each photo to `/v1/uploads/listing-photo` as soon as it's picked. The API re-encodes it as WebP (at most 1600px), which also strips metadata such as GPS location, and stores it under `listings/<userId>/<id>-<w>x<h>.webp`.
+- **Ownership:** a listing can only use photos whose key starts with the seller's own user id.
+- **Drafts** can be saved with just a title. Publishing (or marking sold) requires photos, category, condition, price (at least ₦100), area, delivery and a description of 20+ characters. Otherwise the API returns 400 `LISTING_INCOMPLETE` with per-field `details`. A database check also ensures only drafts and removed listings can be incomplete.
+- **Statuses:** the seller can move between `draft`, `active` and `sold`. `DELETE` sets `removed`. Listings that admins have `flagged` can't be changed (409 `LISTING_UNDER_REVIEW`).
+- **Storage:** `MEDIA_STORAGE=local` keeps files in `.data/media` and serves them at `/media`. This only works on one server, so production refuses it until Cloudflare R2 is added.
 
 ## Not set up yet
 
 - **SMS provider:** codes are only logged (`SMS_PROVIDER=console`). The API refuses to start in production until a real provider (e.g. Termii) is added to `SmsService`.
-- **Email:** there's no email provider yet, so emails aren't verified and password reset is by SMS only.
+- **Photo storage:** local disk only. Production needs Cloudflare R2 (`StorageService` is the place to add it). Photos that are uploaded but never attached to a listing aren't cleaned up yet.
 - **Changing phone or email:** not supported yet.
 - **Roles:** there are no admin roles yet. The web app's `/admin` pages only require a sign-in.
 
 - **PostGIS:** not installed locally, to save disk space. Listings store latitude/longitude, ready for when radius search is added.
-- **Photos:** seeded listings point at placeholder R2 keys. Uploads come with the media module.
+- **Seed photos:** seeded listings point at photo keys that don't exist, so the web app shows its placeholder art for them.

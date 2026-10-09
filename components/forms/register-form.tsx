@@ -8,7 +8,7 @@ import { Button, ButtonLink } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/field";
 import { authClient, type AuthError } from "@/lib/auth-client";
 import { authErrorMessage } from "@/lib/auth-errors";
-import { toE164, validateEmail, validateNigerianPhone } from "@/lib/validation";
+import { formatNigerianPhone, toE164, validateEmail, validateNigerianPhone } from "@/lib/validation";
 import { OtpStep } from "./otp-step";
 import { PasswordInput } from "./password-input";
 
@@ -77,7 +77,7 @@ export function RegisterForm() {
   if (step === "otp") {
     return (
       <OtpStep
-        phone={phoneNumber}
+        sentTo={formatNigerianPhone(phoneNumber)}
         onSubmit={async (code) => {
           const { error } = await authClient.phoneNumber.verify({ phoneNumber, code });
           if (error) throw new Error(authErrorMessage(error));

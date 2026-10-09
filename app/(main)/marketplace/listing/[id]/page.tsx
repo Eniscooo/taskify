@@ -56,7 +56,7 @@ export default async function ListingPage({ params }: PageProps<"/marketplace/li
     <article className="md:pt-2">
       <div className="md:grid md:grid-cols-[1.15fr_1fr] md:gap-8">
         <div className="relative">
-          <ImageGallery title={listing.title} count={listing.photoCount} />
+          <ImageGallery title={listing.title} count={listing.photoCount} images={listing.images} />
           <div className="absolute top-3 right-0 left-0 flex justify-between md:hidden">
             <FloatingBackButton fallbackHref="/marketplace" />
             <SaveButton title={listing.title} className="h-11 w-11 shadow-md" />
@@ -73,6 +73,8 @@ export default async function ListingPage({ params }: PageProps<"/marketplace/li
             <div className="flex flex-wrap gap-2">
               <Badge tone="brand">{conditionLabel(listing.condition)}</Badge>
               <Badge>{categoryLabel(listing.category)}</Badge>
+              {listing.negotiable && <Badge>Open to offers</Badge>}
+              {listing.status === "sold" && <Badge tone="danger">Sold</Badge>}
             </div>
             <p className="flex items-center gap-1.5 text-sm text-muted">
               <MapPin aria-hidden className="h-4 w-4" />

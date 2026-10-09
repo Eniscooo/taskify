@@ -1,4 +1,4 @@
-import { Ban, KeyRound, Landmark, MapPin, Phone, ShieldCheck, Smartphone, User } from "lucide-react";
+import { Ban, KeyRound, Landmark, Mail, MapPin, Phone, ShieldCheck, Smartphone, User } from "lucide-react";
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { ToggleRow } from "@/components/forms/toggle-row";
@@ -41,6 +41,12 @@ async function AccountSection() {
     <SettingsSection id="account" title="Account">
       <SettingsLink href="/profile/edit" icon={User} label="Personal details" value={user.name} />
       <SettingsLink href="/profile/edit" icon={Phone} label="Phone number" value={formatNigerianPhone(user.phone)} />
+      <SettingsLink
+        href={user.emailVerified ? "/profile/edit" : "/settings/verify-email"}
+        icon={Mail}
+        label="Email"
+        value={user.emailVerified ? "Verified" : "Verify now"}
+      />
       <SettingsLink href="/profile/edit" icon={MapPin} label="Default location" value={user.area} />
     </SettingsSection>
   );

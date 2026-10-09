@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/field";
 import { authClient, type AuthError } from "@/lib/auth-client";
 import { authErrorMessage } from "@/lib/auth-errors";
-import { toE164, validateNigerianPhone } from "@/lib/validation";
+import { formatNigerianPhone, toE164, validateNigerianPhone } from "@/lib/validation";
 import { OtpStep } from "./otp-step";
 import { PasswordInput } from "./password-input";
 
@@ -57,7 +57,7 @@ export function LoginForm() {
   if (unverifiedPhone) {
     return (
       <OtpStep
-        phone={unverifiedPhone}
+        sentTo={formatNigerianPhone(unverifiedPhone)}
         title="Verify your phone to continue"
         onSubmit={async (code) => {
           const { error } = await authClient.phoneNumber.verify({ phoneNumber: unverifiedPhone, code });

@@ -17,6 +17,7 @@ const CODE_BY_STATUS: Record<number, string> = {
   403: 'FORBIDDEN',
   404: 'NOT_FOUND',
   409: 'CONFLICT',
+  413: 'FILE_TOO_LARGE',
   422: 'VALIDATION_FAILED',
   429: 'RATE_LIMITED',
 };

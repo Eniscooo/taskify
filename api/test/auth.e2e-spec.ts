@@ -3,6 +3,7 @@ import { Test } from '@nestjs/testing';
 import 'dotenv/config';
 import request from 'supertest';
 import { AppModule } from '../src/app.module.js';
+import { EmailService } from '../src/email/email.service.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { setupApp } from '../src/setup-app.js';
 import { SmsService } from '../src/sms/sms.service.js';
@@ -17,6 +18,7 @@ describe('Auth (e2e)', () => {
   const run = Date.now().toString().slice(-7);
   const createdPhones: string[] = [];
   const sms: { to: string; message: string }[] = [];
+  const emails: { to: string; text: string }[] = [];
 
   let app: NestExpressApplication;
   let prisma: PrismaService;
@@ -29,6 +31,9 @@ describe('Auth (e2e)', () => {
     prisma = app.get(PrismaService);
     vi.spyOn(app.get(SmsService), 'send').mockImplementation(async (to, message) => {
       sms.push({ to, message });
+    });
+    vi.spyOn(app.get(EmailService), 'send').mockImplementation(async ({ to, text }) => {
+      emails.push({ to, text });
     });
   });
 
@@ -56,6 +61,18 @@ describe('Auth (e2e)', () => {
   function lastCodeSentTo(phone: string) {
     const message = sms.findLast((m) => m.to === phone)?.message;
     return message?.match(/\b\d{6}\b/)?.[0];
+  }
+
+  function lastCodeEmailedTo(email: string) {
+    return emails.findLast((m) => m.to === email)?.text.match(/\b\d{6}\b/)?.[0];
+  }
+
+  /** Signs up and verifies the phone, returning a signed-in client. */
+  async function signedInUser(phone: string) {
+    const account = await signUp(phone);
+    await account.c.post('/v1/auth/phone-number/send-otp', { phoneNumber: phone });
+    await account.c.post('/v1/auth/phone-number/verify', { phoneNumber: phone, code: lastCodeSentTo(phone) }).expect(200);
+    return account;
   }
 
   async function signUp(phone: string, password = 'correct-horse-1') {
@@ -151,6 +168,41 @@ describe('Auth (e2e)', () => {
     await c.get('/v1/me').expect(401);
     await client().post('/v1/auth/sign-in/phone-number', { phoneNumber: phone, password }).expect(401);
     await client().post('/v1/auth/sign-in/phone-number', { phoneNumber: phone, password: 'new-password-2' }).expect(200);
+  });
+
+  it('verifies the email address with an emailed code', async () => {
+    const { c, email } = await signedInUser(newPhone(7));
+    expect((await c.get('/v1/me')).body.emailVerified).toBe(false);
+
+    await c.post('/v1/auth/email-otp/send-verification-otp', { email, type: 'email-verification' }).expect(200);
+    const otp = lastCodeEmailedTo(email);
+    expect(otp).toBeDefined();
+    await c.post('/v1/auth/email-otp/verify-email', { email, otp: '000000' }).expect(400);
+    await c.post('/v1/auth/email-otp/verify-email', { email, otp }).expect(200);
+
+    expect((await c.get('/v1/me')).body.emailVerified).toBe(true);
+  });
+
+  it('resets the password with an emailed code', async () => {
+    const phone = newPhone(8);
+    const { email } = await signedInUser(phone);
+
+    const c = client();
+    await c.post('/v1/auth/email-otp/request-password-reset', { email }).expect(200);
+    const otp = lastCodeEmailedTo(email);
+    await c.post('/v1/auth/email-otp/reset-password', { email, otp, password: 'emailed-reset-3' }).expect(200);
+
+    await client().post('/v1/auth/sign-in/email', { email, password: 'emailed-reset-3' }).expect(200);
+  });
+
+  it('does not email codes for accounts that do not exist', async () => {
+    const email = `nobody-${run}@example.com`;
+    await client().post('/v1/auth/email-otp/request-password-reset', { email }).expect(200);
+    expect(lastCodeEmailedTo(email)).toBeUndefined();
+  });
+
+  it('has no passwordless email sign-in', async () => {
+    await client().post('/v1/auth/sign-in/email-otp', { email: 'x@example.com', otp: '123456' }).expect(404);
   });
 
   it('rejects auth requests from untrusted origins', async () => {

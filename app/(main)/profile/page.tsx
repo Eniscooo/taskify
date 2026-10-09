@@ -2,7 +2,7 @@ import { Bookmark, Package, Pencil, Share2 } from "lucide-react";
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { PageHeader } from "@/components/layout/page-header";
-import { ProductGrid } from "@/components/marketplace/product-card";
+import { ProductCard, ProductGrid } from "@/components/marketplace/product-card";
 import { ProfileHeader, ProfileStats } from "@/components/profile/profile-header";
 import { ProfileMenu } from "@/components/profile/profile-menu";
 import { ReviewList } from "@/components/profile/review-card";
@@ -12,10 +12,24 @@ import { SectionHeader } from "@/components/ui/card";
 import { ProfileSkeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/states";
 import { getOrders, getReviews, getSavedListings } from "@/lib/api";
-import { cachedListings } from "@/lib/data/listings";
-import { requireUser } from "@/lib/session";
+import { getMyListings, requireUser } from "@/lib/session";
+import type { MyListing } from "@/lib/types";
 
 export const metadata: Metadata = { title: "Your profile" };
+
+/** Drafts and flagged listings open in the editor; others open their page. */
+function myListingLink(listing: MyListing): { href?: string; badge?: string } {
+  switch (listing.status) {
+    case "draft":
+      return { href: `/sell?edit=${listing.id}`, badge: "Draft" };
+    case "sold":
+      return { badge: "Sold" };
+    case "flagged":
+      return { href: `/sell?edit=${listing.id}`, badge: "Under review" };
+    default:
+      return {};
+  }
+}
 
 export default function ProfilePage() {
   return (
@@ -28,7 +42,7 @@ export default function ProfilePage() {
 async function Profile() {
   const user = await requireUser("/profile");
   const [listings, saved, reviews, selling] = await Promise.all([
-    cachedListings({ seller: user.username }),
+    getMyListings(),
     getSavedListings(user.id),
     getReviews(user.id),
     getOrders("selling", user.id),
@@ -76,7 +90,11 @@ async function Profile() {
           }
         />
         {listings.length ? (
-          <ProductGrid listings={listings} />
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
+            {listings.map((l) => (
+              <ProductCard key={l.id} listing={l} {...myListingLink(l)} />
+            ))}
+          </div>
         ) : (
           <EmptyState
             icon={Package}

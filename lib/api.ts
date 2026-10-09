@@ -14,6 +14,7 @@ import type {
   DeliveryMethod,
   Listing,
   ListingCategory,
+  MyListing,
   Message,
   Order,
   ServiceCategory,
@@ -21,11 +22,18 @@ import type {
   User,
 } from "./types";
 
+/** Per-field problems, e.g. `{ field: "price", problems: ["Price must be at least ₦100."] }`. */
+export interface FieldProblem {
+  field: string;
+  problems: string[];
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
     public code = "ERROR",
+    public details?: FieldProblem[],
   ) {
     super(message);
   }
@@ -39,11 +47,14 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE_URL}${path}`, {
     credentials: "include",
     ...init,
-    headers: { ...(init?.body != null && { "Content-Type": "application/json" }), ...init?.headers },
+    // FormData bodies (uploads) set their own multipart Content-Type.
+    headers: { ...(typeof init?.body === "string" && { "Content-Type": "application/json" }), ...init?.headers },
   });
   if (!res.ok) {
-    const body = (await res.json().catch(() => null)) as { error?: { code?: string; message?: string } } | null;
-    throw new ApiError(res.status, body?.error?.message ?? "Request failed", body?.error?.code);
+    const body = (await res.json().catch(() => null)) as {
+      error?: { code?: string; message?: string; details?: FieldProblem[] };
+    } | null;
+    throw new ApiError(res.status, body?.error?.message ?? "Request failed", body?.error?.code, body?.error?.details);
   }
   return res.json() as Promise<T>;
 }
@@ -152,36 +163,55 @@ export async function getSavedListings(userId: string) {
   return clone(db.listings.filter((l) => saved.includes(l.id)));
 }
 
+/** Body for creating or editing a listing. Drafts can leave most of it out. */
 export interface ListingInput {
   title: string;
-  category: ListingCategory;
-  condition: Condition;
-  price: number;
-  area: Area;
-  delivery: DeliveryMethod;
-  description: string;
-  photoCount: number;
+  category?: ListingCategory;
+  condition?: Condition;
+  price?: number;
+  negotiable?: boolean;
+  area?: Area;
+  delivery?: DeliveryMethod;
+  description?: string;
+  /** Keys from uploadListingPhoto; the first is the cover. */
+  photos?: string[];
+}
+
+export interface UploadedListingPhoto {
+  key: string;
+  url: string;
+  width: number;
+  height: number;
+}
+
+/** Uploads one photo. The API resizes it and strips location data. */
+export async function uploadListingPhoto(file: File): Promise<UploadedListingPhoto> {
+  const body = new FormData();
+  body.append("file", file);
+  return request<UploadedListingPhoto>("/uploads/listing-photo", { method: "POST", body });
 }
 
 export async function createListing(input: ListingInput, opts: { draft?: boolean } = {}) {
-  const listing: Listing = {
-    ...input,
-    id: `l-${2000 + db.listings.length}`,
-    sellerId: CURRENT_USER_ID,
-    postedAt: new Date().toISOString(),
-    distanceKm: 0,
-    status: opts.draft ? "draft" : "active",
-    views: 0,
-  };
-  db.listings.unshift(listing);
-  return clone(listing);
+  return request<MyListing>("/listings", {
+    method: "POST",
+    body: JSON.stringify({ ...input, status: opts.draft ? "draft" : "active" }),
+  });
 }
 
-export async function updateListing(id: string, patch: Partial<Listing>) {
-  const listing = db.listings.find((l) => l.id === id);
-  if (!listing) throw new ApiError(404, "Listing not found");
-  Object.assign(listing, patch);
-  return clone(listing);
+/** Edit, publish a draft (`status: "active"`), mark sold or relist. */
+export async function updateListing(id: string, patch: Partial<ListingInput> & { status?: "active" | "draft" | "sold" }) {
+  return request<MyListing>(`/listings/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
+}
+
+export async function removeListing(id: string) {
+  await fetch(`${API_BASE_URL}/listings/${id}`, { method: "DELETE", credentials: "include" }).then((res) => {
+    if (!res.ok) throw new ApiError(res.status, "Couldn't remove the listing");
+  });
+}
+
+/** One of the signed-in seller's listings, in any status (for editing). */
+export async function getMyListing(id: string) {
+  return request<MyListing>(`/me/listings/${id}`);
 }
 
 // ---------------------------------------------------------------------------

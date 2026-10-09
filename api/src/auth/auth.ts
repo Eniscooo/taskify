@@ -1,8 +1,11 @@
 import { betterAuth } from 'better-auth';
 import { prismaAdapter } from 'better-auth/adapters/prisma';
 import { APIError } from 'better-auth/api';
+import { emailOTP } from 'better-auth/plugins/email-otp';
 import { phoneNumber } from 'better-auth/plugins/phone-number';
 import type { Env } from '../config/env.js';
+import type { EmailService } from '../email/email.service.js';
+import { codeEmail } from '../email/templates.js';
 import type { PrismaService } from '../prisma/prisma.service.js';
 import type { RedisService } from '../redis/redis.service.js';
 import type { SmsService } from '../sms/sms.service.js';
@@ -29,6 +32,7 @@ export interface AuthDeps {
   prisma: PrismaService;
   redis: RedisService;
   sms: SmsService;
+  email: EmailService;
 }
 
 /**
@@ -39,7 +43,7 @@ export interface AuthDeps {
  *
  * Nobody gets a session until their phone is verified (see the session hook).
  */
-export function createAuth({ env, prisma, redis, sms }: AuthDeps) {
+export function createAuth({ env, prisma, redis, sms, email }: AuthDeps) {
   // Assigned once `auth` exists; the session hook below needs the plugin's endpoint.
   let sendVerificationCode: (phone: string) => Promise<unknown>;
 
@@ -50,6 +54,14 @@ export function createAuth({ env, prisma, redis, sms }: AuthDeps) {
     secret: env.BETTER_AUTH_SECRET,
     // Browser origins allowed to call auth routes (CSRF protection).
     trustedOrigins: env.CORS_ORIGINS,
+    // Email codes are for verifying the address and resetting the password
+    // only: no passwordless email sign-in, and email changes aren't supported yet.
+    disabledPaths: [
+      '/sign-in/email-otp',
+      '/forget-password/email-otp',
+      '/email-otp/request-email-change',
+      '/email-otp/change-email',
+    ],
     database: prismaAdapter(prisma, { provider: 'postgresql' }),
 
     // Sessions are stored in Postgres and cached in Redis, so most requests
@@ -114,6 +126,10 @@ export function createAuth({ env, prisma, redis, sms }: AuthDeps) {
         '/phone-number/verify': { window: 60, max: 5 },
         '/phone-number/request-password-reset': { window: 60, max: 3 },
         '/phone-number/reset-password': { window: 60, max: 5 },
+        '/email-otp/send-verification-otp': { window: 60, max: 3 },
+        '/email-otp/verify-email': { window: 60, max: 5 },
+        '/email-otp/request-password-reset': { window: 60, max: 3 },
+        '/email-otp/reset-password': { window: 60, max: 5 },
       },
     },
 
@@ -186,6 +202,16 @@ export function createAuth({ env, prisma, redis, sms }: AuthDeps) {
     },
 
     plugins: [
+      emailOTP({
+        otpLength: 6,
+        expiresIn: OTP_MINUTES * 60,
+        allowedAttempts: 5,
+        disableSignUp: true,
+        sendVerificationOTP: async ({ email: to, otp, type }) => {
+          if (type !== 'email-verification' && type !== 'forget-password') return;
+          await email.send(codeEmail(to, type, otp, OTP_MINUTES));
+        },
+      }),
       phoneNumber({
         otpLength: 6,
         expiresIn: OTP_MINUTES * 60,
