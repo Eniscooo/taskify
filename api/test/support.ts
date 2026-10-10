@@ -30,8 +30,28 @@ export async function createTestApp() {
       post: (path: string, body?: object) => agent.post(path).set('Origin', ORIGIN).send(body),
       patch: (path: string, body: object) => agent.patch(path).set('Origin', ORIGIN).send(body),
       delete: (path: string) => agent.delete(path).set('Origin', ORIGIN),
-      upload: (path: string, file: Buffer, filename: string) =>
-        agent.post(path).set('Origin', ORIGIN).attach('file', file, filename),
+    };
+  }
+
+  /**
+   * PUTs a file to a signed upload URL the way a browser would: no cookies,
+   * just the signed headers. Local storage's URLs point at this API.
+   */
+  function putSigned(url: string, body: Buffer, headers: Record<string, string>) {
+    const { pathname, search } = new URL(url);
+    return request(app.getHttpServer()).put(pathname + search).set('Origin', ORIGIN).set(headers).send(body);
+  }
+
+  /** The full upload flow: get a signed URL, PUT the file, then complete. */
+  async function uploadPhoto(c: ReturnType<typeof client>, body: Buffer, contentType = 'image/jpeg') {
+    const start = (await c.post('/v1/uploads/listing-photo', { contentType, bytes: body.length }).expect(201)).body;
+    await putSigned(start.url, body, start.headers).expect(200);
+    return (await c.post(`/v1/uploads/${start.uploadId}/complete`).expect(200)).body as {
+      uploadId: string;
+      key: string;
+      url: string;
+      width: number;
+      height: number;
     };
   }
 
@@ -52,5 +72,5 @@ export async function createTestApp() {
     return { c, id: me.body.id as string, phone };
   }
 
-  return { app, client, signedInUser };
+  return { app, client, signedInUser, putSigned, uploadPhoto };
 }

@@ -19,8 +19,7 @@
     "strictPropertyInitialization": false,
     "types": [
       "vitest/globals",
-      "node",
-      "multer"
+      "node"
     ]
   },
   "include": [

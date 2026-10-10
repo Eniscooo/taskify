@@ -16,12 +16,17 @@ export const envSchema = z.object({
   /** Public base URL for uploaded media: the CDN in production, the API's /media route locally. */
   MEDIA_BASE_URL: z.url().default('http://localhost:4000/media'),
   /**
-   * Where uploaded photos are stored. "local" writes to MEDIA_DIR and the API
-   * serves them at /media; it only works on a single server, so production
-   * needs object storage (Cloudflare R2, to be added).
+   * Where uploaded photos are stored. "r2" is Cloudflare R2 (production).
+   * "local" writes to MEDIA_DIR, serves files at /media and imitates R2's
+   * signed upload URLs, for development without R2 credentials.
    */
-  MEDIA_STORAGE: z.enum(['local']).default('local'),
+  MEDIA_STORAGE: z.enum(['local', 'r2']).default('local'),
   MEDIA_DIR: z.string().default('.data/media'),
+  /** Cloudflare R2. The keys stay on the server; browsers only get short-lived signed URLs. */
+  R2_ACCOUNT_ID: z.string().optional(),
+  R2_ACCESS_KEY_ID: z.string().optional(),
+  R2_SECRET_ACCESS_KEY: z.string().optional(),
+  R2_BUCKET: z.string().optional(),
 
   /** Signs session cookies. Generate with `openssl rand -base64 32`. */
   BETTER_AUTH_SECRET: z
@@ -59,6 +64,12 @@ export const envSchema = z.object({
     path: ['MEDIA_STORAGE'],
     message: 'object storage is required in production',
   })
+  .refine(
+    (env) =>
+      env.MEDIA_STORAGE !== 'r2' ||
+      (env.R2_ACCOUNT_ID && env.R2_ACCESS_KEY_ID && env.R2_SECRET_ACCESS_KEY && env.R2_BUCKET),
+    { path: ['MEDIA_STORAGE'], message: 'r2 needs R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY and R2_BUCKET' },
+  )
   .refine((env) => env.NODE_ENV !== 'production' || env.EMAIL_PROVIDER !== 'console', {
     path: ['EMAIL_PROVIDER'],
     message: 'a real email provider is required in production',

@@ -34,6 +34,7 @@ export function PhotoUploader({
   photos,
   onChange,
   upload,
+  accept = "image/*",
   max = 10,
   showCover = true,
   invalid,
@@ -43,6 +44,8 @@ export function PhotoUploader({
   photos: UploadedPhoto[];
   onChange: (photos: UploadedPhoto[]) => void;
   upload?: (file: File) => Promise<{ key: string }>;
+  /** File types to offer, e.g. "image/jpeg,image/png". */
+  accept?: string;
   max?: number;
   showCover?: boolean;
   invalid?: boolean;
@@ -160,7 +163,7 @@ export function PhotoUploader({
               <input
                 id={inputId}
                 type="file"
-                accept="image/*"
+                accept={accept}
                 multiple
                 aria-describedby={describedBy}
                 className="sr-only"

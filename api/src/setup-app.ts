@@ -3,12 +3,15 @@ import { ConfigService } from '@nestjs/config';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { toNodeHandler } from 'better-auth/node';
-import type { NextFunction, Request, Response } from 'express';
+import express, { type NextFunction, type Request, type Response } from 'express';
+import { join } from 'node:path';
 import helmet from 'helmet';
 import { AUTH, AUTH_BASE_PATH, CLIENT_IP_HEADER, type Auth } from './auth/auth.js';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter.js';
 import type { Env } from './config/env.js';
+import { LOCAL_UPLOAD_PATH, LocalStorage } from './media/local-storage.js';
 import { StorageService } from './media/storage.service.js';
+import { MAX_PHOTO_BYTES } from './media/uploads.service.js';
 
 export const API_PREFIX = 'v1';
 
@@ -39,17 +42,8 @@ export function setupApp(app: NestExpressApplication) {
   app.useBodyParser('json');
   app.useBodyParser('urlencoded', { extended: true });
 
-  // Local media storage is served by the API itself. Uploads are processed
-  // images with random names, so they're safe to serve publicly and cache.
-  if (config.get('MEDIA_STORAGE', { infer: true }) === 'local') {
-    app.useStaticAssets(app.get(StorageService).root, {
-      prefix: '/media/',
-      immutable: true,
-      maxAge: '365d',
-      // Let the web app (another origin) show these images.
-      setHeaders: (res) => res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin'),
-    });
-  }
+  const storage = app.get(StorageService);
+  if (storage instanceof LocalStorage) setupLocalStorage(app, storage);
 
   app.useGlobalPipes(
     new ValidationPipe({
@@ -81,4 +75,33 @@ export function setupApp(app: NestExpressApplication) {
     );
     SwaggerModule.setup('docs', app, doc);
   }
+}
+
+/**
+ * Development stand-ins for R2: accept signed uploads (PUT) and serve
+ * processed photos. Only listings/ is served; incoming/ originals (which can
+ * hold GPS data) stay private, as they are in R2.
+ */
+function setupLocalStorage(app: NestExpressApplication, storage: LocalStorage) {
+  app.use(
+    LOCAL_UPLOAD_PATH,
+    express.raw({ type: () => true, limit: MAX_PHOTO_BYTES }),
+    (req: Request, res: Response, next: NextFunction) => {
+      if (req.method !== 'PUT') return next();
+      const body = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+      const key = storage.verifyUpload(req.query, req.headers['content-type'], body.length);
+      if (!key) {
+        res.status(403).json({ error: { code: 'INVALID_UPLOAD_URL', message: 'This upload link is invalid or has expired' } });
+        return;
+      }
+      storage.put(key, body).then(() => res.status(200).end(), next);
+    },
+  );
+  app.useStaticAssets(join(storage.root, 'listings'), {
+    prefix: '/media/listings/',
+    immutable: true,
+    maxAge: '365d',
+    // Let the web app (another origin) show these images.
+    setHeaders: (res) => res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin'),
+  });
 }

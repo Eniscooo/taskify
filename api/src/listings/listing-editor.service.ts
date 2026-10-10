@@ -3,8 +3,6 @@ import { ConfigService } from '@nestjs/config';
 import { koboToNaira, nairaToKobo } from '../common/money.js';
 import type { Env } from '../config/env.js';
 import type { DeliveryMethod, ListingCondition, ListingStatus, Prisma } from '../generated/prisma/client.js';
-import { parsePhotoKey } from '../media/photo-key.js';
-import { StorageService } from '../media/storage.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { CreateListingDto, UpdateListingDto } from './dto/listing-input.dto.js';
 import { toDbEnum, toListingResponse, type ListingResponse } from './listing.mapper.js';
@@ -48,7 +46,6 @@ export class ListingEditorService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly storage: StorageService,
     config: ConfigService<Env, true>,
   ) {
     this.mediaBaseUrl = config.get('MEDIA_BASE_URL', { infer: true });
@@ -85,16 +82,19 @@ export class ListingEditorService {
     if (status === 'active') this.assertPublishable(content);
 
     const { photoCount: _, ...data } = content;
-    const listing = await this.prisma.listing.create({
-      data: {
-        ...data,
-        sellerId,
-        negotiable: dto.negotiable ?? true,
-        status,
-        publishedAt: status === 'active' ? new Date() : null,
-        images: { create: photos },
-      },
-      include: listingInclude,
+    const listing = await this.prisma.$transaction(async (tx) => {
+      await this.markAttached(tx, sellerId, photos);
+      return tx.listing.create({
+        data: {
+          ...data,
+          sellerId,
+          negotiable: dto.negotiable ?? true,
+          status,
+          publishedAt: status === 'active' ? new Date() : null,
+          images: { create: photos },
+        },
+        include: listingInclude,
+      });
     });
     return this.toResponse(listing);
   }
@@ -112,7 +112,7 @@ export class ListingEditorService {
       throw new ConflictException({ code: 'INVALID_STATUS', message: 'Publish the listing before marking it sold.' });
     }
 
-    const photos = dto.photos ? await this.checkPhotos(sellerId, dto.photos) : null;
+    const photos = dto.photos ? await this.checkPhotos(sellerId, dto.photos, existing.images) : null;
     const content: ListingContent = {
       title: dto.title ?? existing.title,
       categoryId: dto.category !== undefined ? await this.categoryId(dto.category) : existing.categoryId,
@@ -127,7 +127,10 @@ export class ListingEditorService {
 
     const { photoCount: _, ...data } = content;
     const listing = await this.prisma.$transaction(async (tx) => {
-      if (photos) await tx.listingImage.deleteMany({ where: { listingId: id } });
+      if (photos) {
+        await tx.listingImage.deleteMany({ where: { listingId: id } });
+        await this.markAttached(tx, sellerId, photos);
+      }
       return tx.listing.update({
         where: { id },
         data: {
@@ -190,16 +193,28 @@ export class ListingEditorService {
     return category.id;
   }
 
-  /** Photos must be this seller's uploads and still exist. Returns image rows in order. */
-  private async checkPhotos(sellerId: string, keys: string[]): Promise<Prisma.ListingImageCreateWithoutListingInput[]> {
+  /**
+   * Photos must be the seller's own finished uploads (checked in Postgres),
+   * or photos the listing already has. Returns image rows in order.
+   */
+  private async checkPhotos(
+    sellerId: string,
+    keys: string[],
+    current: { storageKey: string; width: number | null; height: number | null }[] = [],
+  ): Promise<Prisma.ListingImageCreateWithoutListingInput[]> {
     const unique = [...new Set(keys)];
-    const images = await Promise.all(
-      unique.map(async (key, position) => {
-        const parsed = parsePhotoKey(key);
-        if (!parsed || parsed.userId !== sellerId || !(await this.storage.exists(key))) return null;
-        return { storageKey: key, position, width: parsed.width, height: parsed.height };
-      }),
-    );
+    const uploads = await this.prisma.mediaUpload.findMany({
+      where: { ownerId: sellerId, key: { in: unique }, status: { in: ['ready', 'attached'] } },
+      select: { key: true, width: true, height: true },
+    });
+    const sources = new Map<string, { width: number | null; height: number | null }>([
+      ...current.map((img) => [img.storageKey, img] as const),
+      ...uploads.map((u) => [u.key!, u] as const),
+    ]);
+    const images = unique.map((key, position) => {
+      const source = sources.get(key);
+      return source ? { storageKey: key, position, width: source.width, height: source.height } : null;
+    });
     if (images.some((img) => img === null)) {
       throw new BadRequestException({
         code: 'INVALID_PHOTO',
@@ -207,6 +222,18 @@ export class ListingEditorService {
       });
     }
     return images as Prisma.ListingImageCreateWithoutListingInput[];
+  }
+
+  /** Uploads used by a listing are no longer orphans waiting for cleanup. */
+  private async markAttached(
+    tx: Prisma.TransactionClient,
+    ownerId: string,
+    photos: Prisma.ListingImageCreateWithoutListingInput[],
+  ) {
+    await tx.mediaUpload.updateMany({
+      where: { ownerId, key: { in: photos.map((p) => p.storageKey) } },
+      data: { status: 'attached' },
+    });
   }
 
   private toResponse(listing: ListingWithRelations): ListingResponse {

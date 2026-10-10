@@ -163,6 +163,8 @@ export function SellForm({ listing }: { listing?: MyListing }) {
           photos={form.photos}
           onChange={(photos) => set({ photos })}
           upload={uploadListingPhoto}
+          // The API takes these; iPhones convert HEIC photos to JPEG for them.
+          accept="image/jpeg,image/png,image/webp"
           invalid={!!errors.photos}
           describedBy={errors.photos ? "photos-error" : undefined}
         />

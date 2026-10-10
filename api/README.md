@@ -43,6 +43,7 @@ Postgres data lives in `.data/`. Delete `.data/postgres` for a clean database.
 | `npm run db:deploy` | Apply existing migrations (CI and production) |
 | `npm run db:seed` | Seed dev data (safe to re-run) |
 | `npm run db:studio` | Browse the database in Prisma Studio |
+| `npm run r2:setup` | One-time R2 bucket setup (CORS + cleanup rule) |
 | `npm test` | Unit tests |
 | `npm run test:e2e` | End-to-end tests (needs `services` running and the seed) |
 | `npm run lint` / `npm run typecheck` | oxlint / tsc |
@@ -88,7 +89,7 @@ src/
 ├── auth/                    Better Auth config, SessionGuard, @Public(), @CurrentUser()
 ├── sms/                     SmsService (logs to the console for now)
 ├── email/                   EmailService (Resend, or console in development) + templates
-├── media/                   photo uploads, StorageService (local disk for now)
+├── media/                   signed photo uploads, StorageService (R2, or local disk in development)
 ├── users/                   GET /v1/me
 ├── health/                  GET /v1/health (db + redis)
 ├── categories/              GET /v1/categories
@@ -146,7 +147,8 @@ Following the build plan, these modules come next, each with its own migration: 
 
 **In route handlers**, every route needs a session by default. Use `@Public()` for open routes and `@CurrentUser()` to get the signed-in user.
 | GET | `/v1/listings/:id` | Active or sold listings only |
-| POST | `/v1/uploads/listing-photo` | Multipart `file`. Returns `{ key, url, width, height }` |
+| POST | `/v1/uploads/listing-photo` | `{ contentType, bytes }` → a signed URL to PUT the photo to |
+| POST | `/v1/uploads/:id/complete` | After the PUT: processes the photo, returns `{ key, url, width, height }` |
 | POST | `/v1/listings` | Publish (default) or `status: "draft"`. `photos` takes upload keys |
 | PATCH | `/v1/listings/:id` | Seller only: edit, publish a draft, mark `sold`, relist |
 | DELETE | `/v1/listings/:id` | Seller only: removes the listing |
@@ -155,16 +157,29 @@ Following the build plan, these modules come next, each with its own migration: 
 
 ## Listings and photos
 
-- **Uploads:** the browser sends each photo to `/v1/uploads/listing-photo` as soon as it's picked. The API re-encodes it as WebP (at most 1600px), which also strips metadata such as GPS location, and stores it under `listings/<userId>/<id>-<w>x<h>.webp`.
-- **Ownership:** a listing can only use photos whose key starts with the seller's own user id.
+- **Who does what:** R2 stores the files, Postgres stores who owns each upload and its object keys (`media_uploads`), and NestJS decides who may upload and signs the upload URLs. R2 credentials never reach the browser.
+- **Uploads, step 1:** `POST /v1/uploads/listing-photo` with the type (JPEG, PNG or WebP) and size (up to 15 MB). The API records the upload and returns a presigned PUT URL for a private `incoming/<userId>/<id>` key, valid for 10 minutes and locked to that exact type and size.
+- **Step 2:** the browser PUTs the file straight to R2.
+- **Step 3:** `POST /v1/uploads/:id/complete`. The API reads the original, re-encodes it as WebP (at most 1600px), which also strips metadata such as GPS location, saves it publicly as `listings/<id>.webp` and deletes the original.
+- **Ownership:** a listing can only use the seller's own completed uploads (checked in Postgres), or photos it already has.
 - **Drafts** can be saved with just a title. Publishing (or marking sold) requires photos, category, condition, price (at least ₦100), area, delivery and a description of 20+ characters. Otherwise the API returns 400 `LISTING_INCOMPLETE` with per-field `details`. A database check also ensures only drafts and removed listings can be incomplete.
 - **Statuses:** the seller can move between `draft`, `active` and `sold`. `DELETE` sets `removed`. Listings that admins have `flagged` can't be changed (409 `LISTING_UNDER_REVIEW`).
-- **Storage:** `MEDIA_STORAGE=local` keeps files in `.data/media` and serves them at `/media`. This only works on one server, so production refuses it until Cloudflare R2 is added.
+- **Storage:** `MEDIA_STORAGE=local` (development) keeps files in `.data/media`, serves `listings/` at `/media`, and imitates R2's signed URLs with HMAC-signed PUTs to the API, so the browser flow is identical. Production refuses `local`.
+
+### Setting up R2
+
+1. In Cloudflare, create an R2 bucket, e.g. `naija-market-media`.
+2. Connect a custom domain to the bucket (e.g. `media.naijamarket.ng`) so photos are publicly readable. Set `MEDIA_BASE_URL` to it.
+3. Create an R2 API token with **Object Read & Write** for that bucket only. Put the account id, access key id, secret and bucket name in `.env` as `R2_*`, and set `MEDIA_STORAGE=r2`.
+4. Run `npm run r2:setup`. It allows uploads from `CORS_ORIGINS` and adds a rule that deletes unfinished uploads in `incoming/` after a day.
+
+Originals in `incoming/` sit in the same bucket, so they're reachable through the custom domain if someone knows the random key. Only the uploader does, and the API deletes each original as soon as it's processed.
 
 ## Not set up yet
 
 - **SMS provider:** codes are only logged (`SMS_PROVIDER=console`). The API refuses to start in production until a real provider (e.g. Termii) is added to `SmsService`.
-- **Photo storage:** local disk only. Production needs Cloudflare R2 (`StorageService` is the place to add it). Photos that are uploaded but never attached to a listing aren't cleaned up yet.
+- **Unused photos:** finished uploads that never get attached to a listing (`media_uploads.status = 'ready'`) aren't cleaned up yet. Unfinished originals are deleted by the R2 lifecycle rule.
+- **R2 hasn't been tried with real credentials yet.** The flow is tested end to end with the local stand-in.
 - **Changing phone or email:** not supported yet.
 - **Roles:** there are no admin roles yet. The web app's `/admin` pages only require a sign-in.
 

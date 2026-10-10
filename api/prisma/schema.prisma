@@ -27,6 +27,14 @@ enum UserStatus {
   @@map("user_status")
 }
 
+enum UploadStatus {
+  pending
+  ready
+  attached
+
+  @@map("upload_status")
+}
+
 enum ListingStatus {
   draft
   active
@@ -79,6 +87,7 @@ model User {
   listings Listing[]
   sessions Session[]
   accounts Account[]
+  uploads  MediaUpload[]
 
   @@map("users")
 }
@@ -200,4 +209,28 @@ model ListingImage {
 
   @@unique([listingId, position])
   @@map("listing_images")
+}
+
+// A photo upload. The browser puts the original at incomingKey (private)
+// using a signed URL from the API; the API then re-encodes it to `key`
+// (public) and deletes the original. Postgres is the record of who owns which
+// object, so listings can only use their seller's ready uploads.
+model MediaUpload {
+  id          String       @id @default(uuid(7)) @db.Uuid
+  ownerId     String       @map("owner_id") @db.Uuid
+  status      UploadStatus @default(pending)
+  incomingKey String       @unique @map("incoming_key")
+  contentType String       @map("content_type")
+  bytes       Int
+  key         String?      @unique
+  width       Int?
+  height      Int?
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  owner User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@index([ownerId, status])
+  @@index([status, createdAt])
+  @@map("media_uploads")
 }

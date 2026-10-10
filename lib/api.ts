@@ -178,17 +178,27 @@ export interface ListingInput {
 }
 
 export interface UploadedListingPhoto {
+  uploadId: string;
   key: string;
   url: string;
   width: number;
   height: number;
 }
 
-/** Uploads one photo. The API resizes it and strips location data. */
+/**
+ * Uploads one photo straight to storage (R2) with a signed URL from the API,
+ * then asks the API to finish it: it resizes the photo and strips location
+ * data. Storage credentials never reach the browser.
+ */
 export async function uploadListingPhoto(file: File): Promise<UploadedListingPhoto> {
-  const body = new FormData();
-  body.append("file", file);
-  return request<UploadedListingPhoto>("/uploads/listing-photo", { method: "POST", body });
+  const contentType = file.type === "image/jpg" ? "image/jpeg" : file.type;
+  const signed = await request<{ uploadId: string; url: string; method: "PUT"; headers: Record<string, string> }>(
+    "/uploads/listing-photo",
+    { method: "POST", body: JSON.stringify({ contentType, bytes: file.size }) },
+  );
+  const put = await fetch(signed.url, { method: signed.method, headers: signed.headers, body: file, credentials: "omit" });
+  if (!put.ok) throw new ApiError(put.status, "The photo didn't upload. Try again.");
+  return request<UploadedListingPhoto>(`/uploads/${signed.uploadId}/complete`, { method: "POST" });
 }
 
 export async function createListing(input: ListingInput, opts: { draft?: boolean } = {}) {
